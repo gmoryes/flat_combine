@@ -1,0 +1,24 @@
+cmake_minimum_required(VERSION 3.9)
+project(flat_combine)
+
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_FLAGS "-pthread -g")
+
+set(CMAKE_CXX_FLAGS_TSAN "-g -fsanitize=thread -fno-sanitize-recover=all"
+    CACHE STRING "Compiler flags in tsan build"
+    FORCE)
+
+include_directories(include)
+
+set(BUILD_GTEST ON CACHE BOOL "Builds the googletest subproject")
+set(BUILD_GMOCK ON CACHE BOOL "Builds the googlemock subproject")
+set(gtest_disable_pthreads ON CACHE BOOL "Disable uses of pthreads in gtest.")
+add_subdirectory(third-party/googletest-release-1.8.0)
+
+add_subdirectory(test)
+add_subdirectory(src)
+
+add_executable(flat_combine main.cpp)
+target_link_libraries(flat_combine flat_combiner storage)
+
+
