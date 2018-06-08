@@ -47,7 +47,7 @@ TEST(ThreadLocalTest, Simple) {
 
 ThreadLocal<int> b;
 std::atomic<int> counter;
-void* worker2(void *func_ptr) {
+void worker2(void *func_ptr) {
     std::function<void(void*)> func = *(std::function<void(void*)>*)(func_ptr);
     auto id = std::this_thread::get_id();
     int value = 123;
@@ -67,7 +67,9 @@ TEST(ThreadLocalTest, WithDestructor) {
     std::vector<std::thread> workers;
     std::stringstream ss;
 
-    for (int i = 0; i < 1000; i++) {
+    int WORKERS_NUMBER = 100;
+
+    for (int i = 0; i < WORKERS_NUMBER; i++) {
         workers.emplace_back(&worker2, (void*)(&f));
     }
 
@@ -75,7 +77,9 @@ TEST(ThreadLocalTest, WithDestructor) {
         thread.join();
     }
 
-    EXPECT_TRUE(counter.load() == 1000);
+    std::cout << "counter.load() = " << counter.load() << std::endl;
+
+    EXPECT_TRUE(counter.load() == WORKERS_NUMBER);
 }
 
 TEST(ThreadLocalTest, GetSet) {

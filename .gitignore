@@ -2,4 +2,6 @@
 .idea/
 cmake-build-debug/
 tsan_build/
+mac_build/
+asan_build/
 build/

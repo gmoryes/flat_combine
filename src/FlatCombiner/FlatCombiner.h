@@ -6,48 +6,16 @@
 #include <atomic>
 #include <sstream>
 #include <thread>
+#include <mutex>
 #include <iostream>
+#include "ThreadLocal.h"
+#include <array>
 
-/**
- * Create new thread local variable
- */
-template <typename T> class ThreadLocal {
-public:
-    ThreadLocal(T *initial = nullptr, std::function<void(void*)> destructor = nullptr) {
-        if (destructor != nullptr)
-            pthread_key_create(&_th_key, *destructor.target<void(*)(void*)>());
-        else
-        pthread_key_create(&_th_key, NULL);
-        set(initial);
-    }
-
-    inline T *get() {
-        void *result;
-        result = pthread_getspecific(_th_key);
-        if (result == nullptr)
-            return static_cast<T*>(result);
-
-        return static_cast<T*>(result);
-    }
-
-    inline void set(T *value) {
-        int success = pthread_setspecific(_th_key, static_cast<void*>(value));
-        if (success) {
-            std::stringstream ss;
-            ss << "Error during pthread_setspecific(), return" << success;
-            throw std::runtime_error(ss.str());
-        }
-    }
-
-    T &operator*() { return *get(); }
-
-private:
-    pthread_key_t _th_key;
-
-    static void default_destructor(void *ptr) {
-        delete reinterpret_cast<T*>(ptr);
-    }
-};
+std::mutex mutex123;
+void logg(std::string str) {
+    std::lock_guard<std::mutex> lock(mutex123);
+    std::cout << str << std::endl;
+}
 
 /**
  * Create new flat combine synchronizaion primitive
@@ -61,7 +29,8 @@ private:
  * @template_param QMS
  * Maximum array size that could be passed to a single Combine function call
  */
-template <typename SharedStructure, typename OpNode, std::size_t QMS = 64> class FlatCombiner {
+template <typename SharedStructure, typename OpNode, std::size_t QMS = 64>
+class FlatCombiner {
 public:
     // User defined type for the pending operations description, must be plain object without
     // virtual functions
@@ -82,8 +51,7 @@ public:
         Slot (std::shared_ptr<SharedStructure> storage):
             user_op(storage),
             generation(0),
-            next_and_alive(0),
-            expired(false) {}
+            next_and_alive(0) {}
 
         // User pending operation to be complete
         OpNode user_op;
@@ -102,13 +70,20 @@ public:
         // link left and slot could be deleted
         std::atomic<uint64_t> next_and_alive;
 
-        std::atomic<bool> expired;
         /**
          * Remove alive bit from the next_and_alive pointer and return
          * only correct pointer to the next slot
          */
         Slot *next() {
             return Slot::get_raw_pointer(next_and_alive.load(std::memory_order_acquire));
+        }
+
+        /*
+         * Return true if slot is still in queue, check that next_and_alive non zero
+         */
+        bool in_queue() {
+            //std::memory_order_acquire
+            return next_and_alive.load() != 0;
         }
 
         static Slot *get_raw_pointer(uintptr_t ptr) {
@@ -124,15 +99,19 @@ public:
      * @param Combine function that aplly pending operations onto some data structure. It accepts array
      * of pending ops and allowed to modify it in any way except delete pointers
      */ /* _slot(nullptr, orphan_slot) */
-    FlatCombiner(combiner combine):
-        _slot(nullptr),
-        _combine(combine) {
+    FlatCombiner(combiner combine): _slot(nullptr), _combine(combine) {
 
         _lock.store(0, std::memory_order_relaxed);
         _data_structure = std::make_shared<SharedStructure>();
-        auto dummy_slot = new Slot(_data_structure);
-        auto result_ptr_modify = reinterpret_cast<uintptr_t>(dummy_slot);
+        auto dummy_slot_head = new Slot(_data_structure);
+        auto result_ptr_modify = reinterpret_cast<uintptr_t>(dummy_slot_head);
         _queue.store(result_ptr_modify, std::memory_order_relaxed);
+
+        auto dummy_slot_tail = new Slot(_data_structure);
+        result_ptr_modify = reinterpret_cast<uintptr_t>(dummy_slot_tail) | Slot::THREAD_ALIVE_BIT;
+
+        _dummy_tail = result_ptr_modify;
+        FlatCombiner::push_to_queue(result_ptr_modify);
     }
     ~FlatCombiner() { /* dequeue all slot, think about slot deletition */ }
 
@@ -147,11 +126,10 @@ public:
 
         if (modified_ptr == nullptr) {
             slot = new Slot(_data_structure);
-            std::cout << "recv slot(" << slot << ")" << std::endl;
+            std::stringstream ss;
+            ss << "recv slot(" << slot << ")"; logg(ss.str());
             auto *result_ptr_modify = new uintptr_t(reinterpret_cast<uintptr_t>(slot) | Slot::THREAD_ALIVE_BIT);
             _slot.set(result_ptr_modify);
-            std::cout << "push to queue(" << slot << ")" << std::endl;
-            FlatCombiner::push_to_queue(*result_ptr_modify);
         } else {
             auto result_ptr_modify = reinterpret_cast<uintptr_t>(_slot.get());
             slot = Slot::get_raw_pointer(result_ptr_modify);
@@ -175,28 +153,32 @@ public:
         uintptr_t modified_ptr = *_slot.get();
         Slot *slot = Slot::get_raw_pointer(modified_ptr);
 
-        if (slot->expired.load(std::memory_order_acquire)) {
-            std::cout << "slot(" << (uintptr_t)slot << ") has expired" << std::endl;
+        std::stringstream ss;
+        ss << "check in queue slot(" << slot << ")"; logg(ss.str());
+        if (not slot->in_queue())
             FlatCombiner::push_to_queue(reinterpret_cast<uintptr_t>(modified_ptr));
-            slot->expired.store(false, std::memory_order_relaxed);
-        }
 
-        while (true) {
+        while (not slot->user_op.complete()) {
             if (uint64_t generation = FlatCombiner::try_lock(std::memory_order_release, std::memory_order_relaxed)) {
                 // Yep!! We are executor
-                std::cout << "slot(" << slot << ") is executor" << std::endl;
+                std::stringstream ss;
+                ss << "slot(" << slot << ") is executor"; logg(ss.str());
+
                 FlatCombiner::run_executor(generation);
                 FlatCombiner::unlock();
-                std::cout << "slot(" << slot << ") unlock" << std::endl;
+
+                std::stringstream ss1;
+                ss1 << "slot(" << slot << ") unlock" << std::endl; logg(ss1.str());
                 return;
             } else {
                 // :((
-                if (slot->user_op.complete())
-                    return;
 
                 std::this_thread::yield();
             }
         }
+
+        std::stringstream ss2;
+        ss2 << "slot(" << slot << ") has completed"; logg(ss2.str());
     }
 
     /**
@@ -217,6 +199,7 @@ protected:
      * fails the return 0
      *
      */
+    //std::mutex mutex;
     uint64_t try_lock(std::memory_order suc, std::memory_order fail) {
         uint64_t lock = _lock.load(std::memory_order_acquire);
         if (lock & LOCK_BIT_MASK)
@@ -280,6 +263,7 @@ private:
     // data structure is ends up in this queue and then executed as a batch by
     // flat_combine method call
     std::atomic<uintptr_t> _queue{};
+    uintptr_t _dummy_tail;
 
     // Insert between dummy slot and next to it
     void push_to_queue(uintptr_t new_node_ptr) {
@@ -288,27 +272,26 @@ private:
         auto new_node = Slot::get_raw_pointer(new_node_ptr);
 
         uintptr_t next;
-        std::cout << "Before: head(" << head << "), next(" << head->next_and_alive.load(std::memory_order_relaxed) << ")";
-        std::cout << ", current(" << new_node_ptr << ")" << std::endl;
+        std::stringstream ss;
+        ss << "Before: head(" << head << "), next(" << head->next_and_alive.load(std::memory_order_relaxed) << ")";
+        ss << ", current(" << new_node_ptr << ")"; logg(ss.str());
+
+        uint64_t tmp;
         do {
             next = head->next_and_alive.load(std::memory_order_acquire);
             new_node->next_and_alive.store(next, std::memory_order_relaxed);
+
+            tmp = static_cast<unsigned long long>(next);
         } while (!head->next_and_alive.compare_exchange_weak(
-            next,
+            tmp,
             new_node_ptr,
             std::memory_order_release,
             std::memory_order_relaxed));
-        std::cout << "After: head(" << head << "), next(" << head->next_and_alive.load(std::memory_order_relaxed) << ")";
-        std::cout << ", next(" << new_node->next_and_alive.load(std::memory_order_relaxed);
-        std::cout << ")" << std::endl;
-        /*
-         * !std::atomic_compare_exchange_weak(
-            &head->next_and_alive,
-            &new_node->next_and_alive,
-            new_node_ptr,
-            std::memory_order_release,
-            std::memory_order_relaxed)
-         */
+
+        std::stringstream ss1;
+        ss1 << "After: head(" << head << "), next(" << head->next_and_alive.load(std::memory_order_relaxed) << ")";
+        ss1 << ", next(" << new_node->next_and_alive.load(std::memory_order_relaxed);
+        ss1 << ")"; logg(ss1.str());
 
     }
 
@@ -331,27 +314,42 @@ private:
         uintptr_t current_node = parent->next_and_alive.load(std::memory_order_relaxed);
 
         int n = 0;
-        while (current_node) {
-            std::cout << "get current_node(" << current_node << ")" << std::endl;
+        while (current_node != _dummy_tail) {
+            std::stringstream ss;
+            ss << "run_executor(" << generation << "): get current_node(" << std::hex << current_node << ")"; logg(ss.str());
             Slot *slot = Slot::get_raw_pointer(current_node);
+
             if (Slot::is_alive(current_node)) {
+
                 if (slot->user_op.has_data()) {
-                    std::cout << "slot(" << slot << ") has data" << std::endl;
+
+                    std::stringstream ss;
+                    ss << "slot(" << slot << ") has data"; logg(ss.str());
                     slot->generation = generation;
                     _combine_shot[n] = &slot->user_op;
                     n++;
                     parent = slot;
+
                 } else if (generation - slot->generation > MAX_AWAIT_TIME) {
-                    std::cout << "gen of slot(" << current_node << ") = " << slot->generation;
-                    std::cout << " current = " << generation << std::endl;
-                    slot->expired.store(true, std::memory_order_release);
+
+                    std::stringstream ss;
+                    ss << "gen of slot(" << current_node << ") = " << slot->generation;
+                    ss << " current = " << generation; logg(ss.str());
                     FlatCombiner::dequeue_slot(parent, slot);
+
+                    // For call next_and_alive from parent, slot->next_and_alive is zero now
+                    slot = parent;
+                } else {
+                    parent = slot;
                 }
+
             } else {
                 FlatCombiner::dequeue_slot(parent, slot);
+                // See up comment
+                slot = parent;
             }
 
-            current_node = slot->next_and_alive;
+            current_node = slot->next_and_alive.load(std::memory_order_acquire);
         }
 
         // TODO fix error
