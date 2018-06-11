@@ -10,7 +10,8 @@
 std::mutex mutex3211;
 void logggg(std::string str) {
     std::lock_guard<std::mutex> lock(mutex3211);
-    std::cout << std::hex << str << std::endl;
+    str += "\n";
+    std::cout << std::hex << str;
 }
 
 bool Storage::Execute(Storage::Operation op, const std::string &key, std::string &value) {

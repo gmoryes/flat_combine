@@ -11,11 +11,13 @@
 #include <cstdlib>
 #include <condition_variable>
 #include <atomic>
+#include <sys/time.h>
 
 std::mutex mutex321;
 void loggggg(std::string str) {
     std::lock_guard<std::mutex> lock(mutex321);
-    std::cout << std::hex << str << std::endl;
+    str += "\n";
+    std::cout << std::hex << str;
 }
 
 using shared_combiner_t = std::shared_ptr<FlatCombiner<Storage, StorageSlot>>;
@@ -37,7 +39,12 @@ bool check_error(StorageSlot *storage_slot, bool must_be = false) {
 }
 
 void worker(int number, shared_combiner_t& flat_combiner) {
-    srand(static_cast<unsigned int>(time(0) * number));
+
+    struct timeval tp;
+    gettimeofday(&tp, NULL);
+    long int ms = tp.tv_sec * 1000 + tp.tv_usec / 1000;
+
+    srand(static_cast<unsigned int>(ms * number));
     std::stringstream ss1;
     ss1 << number << " get slot"; loggggg(ss1.str());
     StorageSlot *storage_slot = flat_combiner->get_slot();
@@ -48,8 +55,8 @@ void worker(int number, shared_combiner_t& flat_combiner) {
     std::string key = ss.str() + "_key_";
     std::string value = ss.str();
 
-    //int N = MAX_OPERATION_PER_THREAD * (std::abs(rand()) / double(RAND_MAX));
-    int N = 1;
+    int N = MAX_OPERATION_PER_THREAD * (std::abs(rand()) / double(RAND_MAX));
+    //int N = 1;
 
     std::vector<std::string> keys(N);
     for (int i = 0; i < N; i++) {
@@ -98,6 +105,7 @@ void worker(int number, shared_combiner_t& flat_combiner) {
 
 TEST(FlatCombineLogicTest, PutGetDeleteTest) {
     std::cout << "pid(" << getpid() << ")" << std::endl;
+    std::cout << std::unitbuf;
     Storage storage;
 
     std::function<void(StorageSlot*, StorageSlot*)> optimize_func(StorageSlot::optimize_queue);
@@ -105,18 +113,20 @@ TEST(FlatCombineLogicTest, PutGetDeleteTest) {
     auto shared_flat_combiner = std::make_shared<FlatCombiner<Storage, StorageSlot>>(optimize_func);
 
     std::vector<std::thread> workers;
-    int workers_number = 2;
+    int workers_number = 3;
     int iterations_number = 10;
-
+    std::cout << "get lock" << std::endl;
     std::unique_lock<std::mutex> lock(mutex);
-
+    std::cout << "get lock done" << std::endl;
+    int tmp = 0;
     for (int i = 0; i < iterations_number; i++) {
         if (alive_workers_number < workers_number) {
-            for (int j = 0; j < workers_number; j++) {
-                std::thread thread(&worker, j, std::ref(shared_flat_combiner));
-                alive_workers_number.fetch_add(1);
-                thread.detach();
-            }
+            std::stringstream ss4;
+            ss4 << "=========create new worker(" << tmp << ")=========="; loggggg(ss4.str());
+            std::thread thread(&worker, tmp, std::ref(shared_flat_combiner));
+            tmp++;
+            alive_workers_number.fetch_add(1);
+            thread.detach();
         }
         std::stringstream ss4;
         ss4 << "=========wait_start(" << i << ")=========="; loggggg(ss4.str());
@@ -129,4 +139,7 @@ TEST(FlatCombineLogicTest, PutGetDeleteTest) {
     while ((current_worker_number = alive_workers_number.load())) {
         cv.wait(lock, [&] { return alive_workers_number != current_worker_number; });
     }
+
+    std::stringstream ss5;
+    ss5 << "[=======DONE========]"; loggggg(ss5.str());
 }
