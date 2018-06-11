@@ -65,7 +65,7 @@ public:
         // deleting node.
         //
         // So if stolen bit is set then the only reference left to this slot
-        // if the queue. If pointer is zero and bit is set then the only ref
+        // in the queue. If pointer is zero and bit is set then the only ref
         // left is thread_local storage. If next is zero there are no
         // link left and slot could be deleted
         std::atomic<uint64_t> next_and_alive;
@@ -83,7 +83,7 @@ public:
          */
         bool in_queue() {
             //std::memory_order_acquire
-            return next_and_alive.load() != 0;
+            return next_and_alive.load(std::memory_order_acquire) != 0;
         }
 
         static Slot *get_raw_pointer(uintptr_t ptr) {
@@ -186,11 +186,15 @@ public:
      * destroy thread slot in the queue
      */
     void detach() {
-        pending_operation *result = _slot.get();
-        if (result != nullptr) {
+        uintptr_t *p = _slot.get();
+        if (p != nullptr) {
             _slot.set(nullptr);
+        } else {
+            return;
         }
-        orphan_slot(result);
+
+        uintptr_t modified_ptr = *p;
+        orphan_slot(modified_ptr);
     }
 
 protected:
@@ -235,16 +239,78 @@ protected:
         // TODO: set pointer pare of "next" to null, DO NOT modify usage bit
         // TODO: if next == 0, delete pointer
         parent->next_and_alive.store(need_remove->next_and_alive, std::memory_order_relaxed);
-        need_remove->next_and_alive.store(0, std::memory_order_relaxed);
+        need_remove->next_and_alive.store(0, std::memory_order_release);
     }
 
     /**
      * Function called once thread owning this slot is going to die or to
      * destory slot in some other way
      *
-     * @param Slot pointer to the slot is being to orphan
+     * @param slot modified adress to the slot is being to orphan
      */
-    void orphan_slot(Slot *) {}
+    void orphan_slot(uintptr_t slot_to_delete) {
+
+        /*auto head = _queue.load(std::memory_order_relaxed);
+
+        uintptr_t parent = head;
+        uintptr_t current_node = head;
+
+        int n = 0;
+        while (current_node != _dummy_tail) {
+            std::stringstream ss;
+            ss << std::hex << "search_for(" << slot_to_delete << "): get current_node(" << std::hex << current_node << ")";
+            logg(ss.str());
+            Slot *slot = Slot::get_raw_pointer(current_node);
+
+            auto next_ptr = slot->next_and_alive.load(std::memory_order_acquire);
+            if (next_ptr == 0) {
+                // Somebody has kicked current_node from list, try again get next from parent
+                current_node = parent;
+                continue;
+            }
+
+            if (next_ptr != slot_to_delete) {
+                parent = current_node;
+                current_node = slot->next_and_alive.load(std::memory_order_acquire);
+                std::stringstream ss;
+                ss << std::hex << "search_for(" << slot_to_delete << "): try_next(" << current_node << ")";
+                logg(ss.str());
+                continue;
+            }
+
+            std::stringstream ss2;
+            ss2 << std::hex << "search_ok(" << slot_to_delete << ")";
+            logg(ss2.str());
+            auto dead_ptr = slot_to_delete & Slot::CLEAR_THREAD_ALIVE_BIT;
+            bool success = slot->next_and_alive.compare_exchange_strong(
+                next_ptr,
+                dead_ptr
+            );
+
+            std::stringstream ss3;
+            ss3 << std::hex << "cas_done(" << slot_to_delete << ")";
+            logg(ss3.str());
+            // Match next as not alive, slot will be deleted by executor
+            if (success) {
+                std::stringstream ss1;
+                ss1 << "cas ok(" << slot_to_delete << ")";
+                logg(ss1.str());
+                break;
+            } else if (current_node == head) {
+                // If cas bad and current node is head, our slot could just shift right in list
+                // Because of new node after head
+                current_node = slot->next_and_alive.load(std::memory_order_acquire);
+                continue;
+            }
+
+            std::stringstream ss1;
+            ss1 << std::hex << "cas bad, delete(" << slot_to_delete << ")";
+            logg(ss1.str());
+            // If next was equal, but changed (cas return false), it means that slot_to_deleted
+            // has expired and no any reference to it, and we are able to delete it safely
+            delete Slot::get_raw_pointer(slot_to_delete);
+        }*/
+    }
 
 private:
     static constexpr uint64_t LOCK_BIT_MASK = uint64_t(1) << 63L;
@@ -273,7 +339,7 @@ private:
 
         uintptr_t next;
         std::stringstream ss;
-        ss << "Before: head(" << head << "), next(" << head->next_and_alive.load(std::memory_order_relaxed) << ")";
+        ss << std::hex << "Before: head(" << head << "), next(" << head->next_and_alive.load(std::memory_order_relaxed) << ")";
         ss << ", current(" << new_node_ptr << ")"; logg(ss.str());
 
         uint64_t tmp;
@@ -289,7 +355,7 @@ private:
             std::memory_order_relaxed));
 
         std::stringstream ss1;
-        ss1 << "After: head(" << head << "), next(" << head->next_and_alive.load(std::memory_order_relaxed) << ")";
+        ss1 << std::hex << "After: head(" << head << "), next(" << head->next_and_alive.load(std::memory_order_relaxed) << ")";
         ss1 << ", next(" << new_node->next_and_alive.load(std::memory_order_relaxed);
         ss1 << ")"; logg(ss1.str());
 
@@ -319,8 +385,12 @@ private:
             ss << "run_executor(" << generation << "): get current_node(" << std::hex << current_node << ")"; logg(ss.str());
             Slot *slot = Slot::get_raw_pointer(current_node);
 
+            std::stringstream ss1;
+            ss1 << std::hex << "check slot for alive(" << current_node << ")"; logg(ss1.str());
             if (Slot::is_alive(current_node)) {
 
+                std::stringstream ss1;
+                ss1 << std::hex << "slot alive_ok(" << current_node << ")"; logg(ss1.str());
                 if (slot->user_op.has_data()) {
 
                     std::stringstream ss;
@@ -344,8 +414,17 @@ private:
                 }
 
             } else {
+                std::stringstream ss1;
+                ss1 << std::hex << "slot alive_bad(" << current_node << ")"; logg(ss1.str());
                 FlatCombiner::dequeue_slot(parent, slot);
-                // See up comment
+
+                // Only owner of this ThreadLocal variable could unset the alive flag, if it zero
+                // the only reference to it in parent, so we safely delete after change Next of parent
+                std::stringstream ss;
+                ss << std::hex << "delete(" << slot << ")_2";
+                delete slot;
+
+                // For call next_and_alive from parent, slot->next_and_alive is zero now
                 slot = parent;
             }
 

@@ -29,7 +29,7 @@ bool check_error(StorageSlot *storage_slot, bool must_be = false) {
     return false;
 }
 
-const int MAX_OPERATION_PER_THREAD = 50000;
+const int MAX_OPERATION_PER_THREAD = 5000;
 void put_get_worker(int number, std::shared_ptr<FlatCombiner<Storage, StorageSlot>> flat_combiner) {
     srand(static_cast<unsigned int>(time(0) * number));
     std::stringstream ss1;
@@ -159,7 +159,7 @@ TEST(FlatCombineLogicTest, PutGetTest) {
     auto shared_flat_combiner = std::make_shared<FlatCombiner<Storage, StorageSlot>>(StorageSlot::optimize_queue);
 
     std::vector<std::thread> workers;
-    int workers_number = 20;
+    int workers_number = 10;
     for (int i = 0; i < workers_number; i++) {
         workers.emplace_back(&put_get_worker, i, std::ref(shared_flat_combiner));
     }
@@ -179,7 +179,7 @@ TEST(FlatCombineLogicTest, PutGetDeleteTest) {
     auto shared_flat_combiner = std::make_shared<FlatCombiner<Storage, StorageSlot>>(optimize_func);
 
     std::vector<std::thread> workers;
-    int workers_number = 20;
+    int workers_number = 10;
     for (int i = 0; i < workers_number; i++) {
         workers.emplace_back(&put_get_delete_worker, i, std::ref(shared_flat_combiner));
     }
