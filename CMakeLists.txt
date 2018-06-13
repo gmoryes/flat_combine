@@ -18,7 +18,7 @@ add_subdirectory(third-party/googletest-release-1.8.0)
 add_subdirectory(test)
 add_subdirectory(src)
 
-add_executable(flat_combine main.cpp)
-target_link_libraries(flat_combine flat_combiner storage)
+add_executable(main main.cpp)
+target_link_libraries(main flat_combiner storage logger)
 
 

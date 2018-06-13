@@ -33,28 +33,15 @@ private:
 class StorageSlot {
 public:
 
-    explicit StorageSlot(std::shared_ptr<Storage> storage):
-        _complete(false),
-        _op_code(Storage::Operation::NOT_SET),
-        _error(false),
-        _storage(std::move(storage)) {}
-    ~StorageSlot() = default;
-
-    // Check if slot has data for execute
-    bool has_data();
-
-    // Check if operation is completed
-    bool complete();
-
-    // Check if error happened
-    bool error(std::exception &ex);
+    // Initialize slot after creation
+    void init(std::shared_ptr<Storage> storage);
 
     // Execute operation in Slot
-    void execute();
+    void execute(int op_code);
 
-    // Set operation to slot
-    void set_operation(Storage::Operation op_code, const std::string &key, const std::string &value);
-    void set_operation(Storage::Operation op_code, const std::string &key);
+    // Prepare request data before execute operation
+    void prepare_data(const std::string &key, const std::string &value);
+    void prepare_data(const std::string &key);
 
     // Get data from read operations
     std::string get_data();
@@ -66,17 +53,8 @@ private:
     /* Instance of Storage */
     std::shared_ptr<Storage> _storage;
 
-    /* Flag if operation has been completed */
-    std::atomic<bool> _complete;
-
     /* Data for operation */
     std::string _key;
     std::string _value;
-
-    /* Exeption */
-    std::exception _exception;
-    std::atomic<bool> _error;
-
-    std::atomic<Storage::Operation> _op_code;
 };
 #endif //FLAT_COMBINE_STORAGE_H
