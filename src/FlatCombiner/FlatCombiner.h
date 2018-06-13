@@ -74,30 +74,13 @@ struct Operation {
         op_code.store(op_code_, std::memory_order_release);
     }
 
-    // Execute operation
-    void execute() {
-
-        int op_code_ = op_code.load(std::memory_order_relaxed);
-        // Call user defined execute of operation
-        try {
-            user_op.execute(op_code_);
-        } catch (std::runtime_error &ex) {
-            error.store(true, std::memory_order_release);
-            exception = std::move(ex);
-        }
-
-        // Set some flags for combiner
-        op_code.store(NOT_SET, std::memory_order_release);
-        complete.store(true, std::memory_order_release);
-    }
-
     // Return true if operation complete, false otherwise
     bool is_complete() {
         return complete.load(std::memory_order_acquire);
     }
 
     // Return true if error happened, false otherwise
-    bool is_error() {
+    int error_code() {
         return error.load(std::memory_order_acquire);
     }
 
@@ -120,7 +103,6 @@ struct Operation {
     bool is_alive() const {
         return alive_flag.load(std::memory_order_acquire);
     }
-
 };
 
 /**
@@ -142,57 +124,25 @@ public:
     // virtual functions
     using pending_operation = OpNode;
 
-    // Function that combine multiple operations and apply it onto data structure
-    using combiner = std::function<void(OpNode *, OpNode *)>;
-
     /**
      * @param Combine function that aplly pending operations onto some data structure. It accepts array
      * of pending ops and allowed to modify it in any way except delete pointers
      */ /* _slot(nullptr, orphan_slot) */
-    FlatCombiner(combiner combine): _slot(nullptr/*, orphan_slot */), _combine(combine), _lock(0) {
+    FlatCombiner();
 
-        auto dummy_slot_head = new Operation<OpNode>();
-        _queue.store(dummy_slot_head, std::memory_order_relaxed);
-
-        auto dummy_slot_tail = new Operation<OpNode>();
-        _dummy_tail = dummy_slot_tail;
-        FlatCombiner::push_to_queue(dummy_slot_tail);
-    }
-
-    ~FlatCombiner() {
-        // All threads should do detach() before FlatCombiner destructor call (!)
-        delete _dummy_tail;
-        delete _queue;
-    }
+    ~FlatCombiner();
 
     /**
      * Return pending operation slot to the calling thread, object stays valid as long
      * as current thread is alive or got called detach method
      */
-    Operation<OpNode> *get_slot() {
-
-        Operation<OpNode> *slot = _slot.get();
-
-        if (slot == nullptr) {
-            slot = new Operation<OpNode>();
-            _slot.set(slot);
-        }
-
-        return slot;
-    }
+    Operation<OpNode> *get_slot();
 
     /**
      * Put pending operation in the queue and try to execute it. Method gets blocked until
      * slot gets complete, in other words until slot.complete() returns false
      */
     void apply_slot() {
-        // TODO: assert slot params
-        // TODO: enqueue slot if needs
-        // TODO: try to become executor (acquire lock)
-        //       TODO: scan queue, dequeue stale nodes, prepare array to be passed to Combine call
-        //       TODO: call Combine function
-        //       TODO: unlock
-        // TODO: if lock fails, do thread_yeild and goto 3 TODO
         Operation<OpNode> *slot = _slot.get();
         if (slot == nullptr)
             throw std::runtime_error("Received nullptr");
@@ -325,7 +275,7 @@ protected:
      *
      * @param slot modified adress to the slot is being to orphan
      */
-    void orphan_slot(Operation<OpNode> *slot_to_delete) {
+    static void orphan_slot(Operation<OpNode> *slot_to_delete) {
 
         if (not slot_to_delete->in_queue()) {
             // THe only reference to it was in ThreadLocal, can safely delete it
@@ -339,6 +289,10 @@ protected:
         ss5 << std::hex << "orphan_slot(" << slot_to_delete << ") mark as dead"; my_log(ss5);
         // Say other threads, that we are dead, executor will delete pointer
         slot_to_delete->alive_flag.store(false, std::memory_order_release);
+    }
+
+    static void slot_destructor(void *pointer) {
+        orphan_slot(static_cast<Operation<OpNode>*>(pointer));
     }
 
 private:
@@ -386,9 +340,6 @@ private:
 
     }
 
-    // Function to call in order to execute operations
-    combiner _combine;
-
     // Usual strategy for the combine flat would be sort operations by some creteria
     // and optimize it somehow. That array is using by executor thread to prepare
     // number of ops to pass to combine
@@ -403,7 +354,7 @@ private:
         auto parent = _queue.load(std::memory_order_relaxed);
         auto current_node = parent->next_and_alive.load(std::memory_order_relaxed);
 
-        int n = 0;
+        size_t n = 0;
         while (current_node != _dummy_tail) {
             std::stringstream ss;
             ss << "run_executor(" << generation << "): get current_node(" << std::hex << current_node << ")"; my_log(ss);
@@ -454,14 +405,70 @@ private:
             current_node = current_node->next_and_alive.load(std::memory_order_acquire);
         }
 
-        // TODO fix error
-        //_combine(_combine_shot.data(), _combine_shot.data() + n);
-        for (int i = 0; i < n; i++) {
-            _combine_shot[i]->execute();
+        // Do combine shot (execute all operations stored by executor)
+        FlatCombiner::combine_shot(_combine_shot, n);
+    }
+
+    static void combine_shot(std::array<Operation<OpNode>*, SHOT_N> &executor_tasks, size_t n) {
+
+        std::array<std::pair<OpNode*, int>, SHOT_N> user_tasks;
+        for (size_t i = 0; i < n; i++) {
+            user_tasks.at(i) = std::make_pair(
+                &executor_tasks[i]->user_op,
+                executor_tasks[i]->op_code.load(std::memory_order_relaxed)
+            );
         }
+
+        std::array<int, SHOT_N> result;
+
+        // Call user defined execute of operation
+        executor_tasks.at(0)->user_op.template execute<SHOT_N>(user_tasks, result, n);
+
+        for (size_t i = 0; i < n; i++) {
+            executor_tasks.at(i)->error.store(result.at(i), std::memory_order_release);
+            executor_tasks.at(i)->op_code.store(Operation<OpNode>::NOT_SET, std::memory_order_release);
+            executor_tasks.at(i)->complete.store(true, std::memory_order_release);
+        }
+
     }
 };
 
+
+template<typename OpNode, size_t SHOT_N>
+FlatCombiner<OpNode, SHOT_N>::FlatCombiner():
+    _lock(0),
+    _slot(nullptr, std::function<void(void*)>(slot_destructor)) {
+
+    auto dummy_slot_head = new Operation<OpNode>();
+    _queue.store(dummy_slot_head, std::memory_order_relaxed);
+
+    auto dummy_slot_tail = new Operation<OpNode>();
+    _dummy_tail = dummy_slot_tail;
+    FlatCombiner::push_to_queue(dummy_slot_tail);
+}
+
+template<typename OpNode, size_t SHOT_N>
+FlatCombiner<OpNode, SHOT_N>::~FlatCombiner() {
+    // All threads should do detach() before FlatCombiner destructor call (!)
+    delete _dummy_tail;
+    delete _queue;
+}
+
+template<typename OpNode, size_t SHOT_N>
+Operation<OpNode> *FlatCombiner<OpNode, SHOT_N>::get_slot() {
+
+    Operation<OpNode> *slot = _slot.get();
+
+    if (slot == nullptr) {
+        slot = new Operation<OpNode>();
+        _slot.set(slot);
+    }
+
+    return slot;
+}
+
+
 } // namespace FlatCombiner
+
 
 #endif //FLAT_COMBINE_FLATCOMBINER_H

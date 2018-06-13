@@ -11,7 +11,6 @@
 template <typename T> class ThreadLocal {
 public:
     explicit ThreadLocal(T *initial = nullptr, std::function<void(void*)> destructor = nullptr) {
-        int res;
         if (destructor != nullptr) {
             pthread_key_create(&_th_key, *destructor.target<void(*)(void*)>());
         } else {

@@ -11,16 +11,18 @@
 #include <cstdlib>
 #include "Logger/Logger.h"
 
+using namespace Repository;
 using shared_combiner_t = std::shared_ptr<FlatCombiner::FlatCombiner<StorageSlot>>;
 using shared_storage_t = std::shared_ptr<Storage>;
 shared_storage_t shared_storage;
 
 bool check_error(FlatCombiner::Operation<StorageSlot> *operation, bool must_be = false) {
-    std::exception ex;
-    if (operation->is_error()) {
-        // TODO fix ex.what()
-        std::stringstream ss;
-        ss << "Error: " /*<< ex.what()*/ << "\n"; my_log(ss);
+
+    std::stringstream ss;
+    ss << "ErrorCode(" << operation << "): " << operation->error_code() << ", must_error(" << must_be << ")"; my_log(ss);
+
+    if (operation->error_code()) {
+
         EXPECT_TRUE(must_be);
         return true;
     }
@@ -28,7 +30,7 @@ bool check_error(FlatCombiner::Operation<StorageSlot> *operation, bool must_be =
     return false;
 }
 
-const int MAX_OPERATION_PER_THREAD = 5000;
+const int MAX_OPERATION_PER_THREAD = 100000;
 void put_get_worker(int number, shared_combiner_t flat_combiner) {
     srand(static_cast<unsigned int>(time(0) * number));
     std::stringstream ss1;
@@ -141,9 +143,10 @@ void put_get_delete_worker(int number, shared_combiner_t flat_combiner) {
         std::stringstream ss10;
         ss10 << number << " apply get(" << keys[i] << ")"; my_log(ss10);
         flat_combiner->apply_slot();
-        bool not_found = check_error(operation, true);
+        bool not_found = operation->error_code() == Storage::ErrorCode::NOT_FOUND;
+        std::stringstream ss5;
+        ss5 << number << " ErrorCode(" << operation->error_code() << ")"; my_log(ss5);
         result = operation->user_slot()->get_data();
-        //EXPECT_TRUE(result == "");
         if (!not_found) {
             std::stringstream ss5;
             ss5 << number << " Fail, result(" << result << ")"; my_log(ss5);
@@ -159,7 +162,7 @@ TEST(FlatCombineLogicTest, PutGetTest) {
     std::cout << "pid(" << getpid() << ")" << std::endl;
 
     shared_storage = std::make_shared<Storage>();
-    auto shared_flat_combiner = std::make_shared<FlatCombiner::FlatCombiner<StorageSlot>>(StorageSlot::optimize_queue);
+    auto shared_flat_combiner = std::make_shared<FlatCombiner::FlatCombiner<StorageSlot>>();
 
     std::vector<std::thread> workers;
     int workers_number = 4;
@@ -177,9 +180,7 @@ TEST(FlatCombineLogicTest, PutGetDeleteTest) {
     std::cout << "pid(" << getpid() << ")" << std::endl;
 
     shared_storage = std::make_shared<Storage>();
-    std::function<void(StorageSlot*, StorageSlot*)> optimize_func(StorageSlot::optimize_queue);
-
-    auto shared_flat_combiner = std::make_shared<FlatCombiner::FlatCombiner<StorageSlot>>(optimize_func);
+    auto shared_flat_combiner = std::make_shared<FlatCombiner::FlatCombiner<StorageSlot>>();
 
     std::vector<std::thread> workers;
     int workers_number = 4;

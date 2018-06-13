@@ -4,6 +4,6 @@ set(SOURCE_FILES
     )
 
 add_executable(runStorageTests ${SOURCE_FILES})
-target_link_libraries(runStorageTests gtest gtest_main storage)
+target_link_libraries(runStorageTests gtest gtest_main storage logger)
 
 add_test(runStorageTests runStorageTests)
