@@ -9,6 +9,7 @@
 #include <utility>
 #include <array>
 #include "Logger/Logger.h"
+#include <algorithm>
 
 namespace Repository {
 
