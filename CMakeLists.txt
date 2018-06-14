@@ -28,6 +28,6 @@ add_subdirectory(test)
 add_subdirectory(src)
 
 add_executable(main main.cpp)
-target_link_libraries(main flat_combiner storage logger)
+target_link_libraries(main storage logger)
 
 

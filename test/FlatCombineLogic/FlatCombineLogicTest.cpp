@@ -161,7 +161,6 @@ void put_get_delete_worker(int number, shared_combiner_t flat_combiner) {
 
 TEST(FlatCombineLogicTest, PutGetTest) {
     std::cout << std::unitbuf;
-    std::cout << "pid(" << getpid() << ")" << std::endl;
 
     shared_storage = std::make_shared<Storage>();
     auto shared_flat_combiner = std::make_shared<FlatCombiner::FlatCombiner<StorageSlot>>();
@@ -178,7 +177,6 @@ TEST(FlatCombineLogicTest, PutGetTest) {
 
 TEST(FlatCombineLogicTest, PutGetDeleteTest) {
     std::cout << std::unitbuf;
-    std::cout << "pid(" << getpid() << ")" << std::endl;
 
     shared_storage = std::make_shared<Storage>();
     auto shared_flat_combiner = std::make_shared<FlatCombiner::FlatCombiner<StorageSlot>>();

@@ -1,0 +1,8 @@
+//
+// Created by Михаил Горбушин on 14.06.2018.
+//
+
+#ifndef FLAT_COMBINE_GLOBALLOCKSTORAGE_H
+#define FLAT_COMBINE_GLOBALLOCKSTORAGE_H
+
+#endif //FLAT_COMBINE_GLOBALLOCKSTORAGE_H
