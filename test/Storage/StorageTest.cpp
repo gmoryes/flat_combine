@@ -1,5 +1,5 @@
 #include "gtest/gtest.h"
-#include "storage/Storage.h"
+#include "Storage/Storage.h"
 #include <sstream>
 #include <thread>
 #include <vector>
