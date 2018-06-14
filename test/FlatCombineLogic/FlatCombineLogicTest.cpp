@@ -16,10 +16,13 @@ using shared_combiner_t = std::shared_ptr<FlatCombiner::FlatCombiner<StorageSlot
 using shared_storage_t = std::shared_ptr<Storage>;
 shared_storage_t shared_storage;
 
+const int MAX_OPERATION_PER_THREAD = 100000;
+const int workers_number = 10;
+
 bool check_error(FlatCombiner::Operation<StorageSlot> *operation, bool must_be = false) {
 
-    std::stringstream ss;
-    ss << "ErrorCode(" << operation << "): " << operation->error_code() << ", must_error(" << must_be << ")"; my_log(ss);
+    //std::stringstream ss;
+    //ss << "ErrorCode(" << operation << "): " << operation->error_code() << ", must_error(" << must_be << ")"; my_log(ss);
 
     if (operation->error_code()) {
 
@@ -30,12 +33,11 @@ bool check_error(FlatCombiner::Operation<StorageSlot> *operation, bool must_be =
     return false;
 }
 
-const int MAX_OPERATION_PER_THREAD = 100000;
 void put_get_worker(int number, shared_combiner_t flat_combiner) {
     srand(static_cast<unsigned int>(time(0) * number));
-    std::stringstream ss1;
+    //std::stringstream ss1;
     FlatCombiner::Operation<StorageSlot> *operation = flat_combiner->get_slot();
-    ss1 << number << " get slot(" << operation << ")"; my_log(ss1);
+    //ss1 << number << " get slot(" << operation << ")"; my_log(ss1);
     operation->user_slot()->init(shared_storage);
 
     std::stringstream ss;
@@ -52,31 +54,31 @@ void put_get_worker(int number, shared_combiner_t flat_combiner) {
     }
 
     for (int i = 0; i < MAX_OPERATION_PER_THREAD; i++) {
-        std::stringstream ss2;
-        ss2 << number << " set put(" << keys[i] << ")"; my_log(ss2);
+        //std::stringstream ss2;
+        //ss2 << number << " set put(" << keys[i] << ")"; my_log(ss2);
         operation->set(Storage::Operation::PUT, keys[i], value);
-        std::stringstream ss3;
-        ss3 << number << " apply put(" << keys[i] << ")"; my_log(ss3);
+        //std::stringstream ss3;
+        //ss3 << number << " apply put(" << keys[i] << ")"; my_log(ss3);
         flat_combiner->apply_slot();
         check_error(operation);
     }
 
     for (int i = 0; i < MAX_OPERATION_PER_THREAD; i++) {
-        std::stringstream ss2;
-        ss2 << number << " set get(" << keys[i] << ")"; my_log(ss2);
+        //std::stringstream ss2;
+        //ss2 << number << " set get(" << keys[i] << ")"; my_log(ss2);
         operation->set(Storage::Operation::GET, keys[i]);
-        std::stringstream ss3;
-        ss3 << number << " apply get(" << keys[i] << ")"; my_log(ss3);
+        //std::stringstream ss3;
+        //ss3 << number << " apply get(" << keys[i] << ")"; my_log(ss3);
         flat_combiner->apply_slot();
         check_error(operation);
 
         std::string result = operation->user_slot()->get_data();
-        std::stringstream ss4;
-        ss4 << number << " result(" << result << ")"; my_log(ss4);
+        //std::stringstream ss4;
+        //ss4 << number << " result(" << result << ")"; my_log(ss4);
         EXPECT_TRUE(result == value);
         if (result != value) {
-            std::stringstream ss5;
-            ss5 << number << " Fail, result(" << result << "), value(" << value << ")"; my_log(ss5);
+            //std::stringstream ss5;
+            //ss5 << number << " Fail, result(" << result << "), value(" << value << ")"; my_log(ss5);
 
             abort();
         }
@@ -85,9 +87,9 @@ void put_get_worker(int number, shared_combiner_t flat_combiner) {
 
 void put_get_delete_worker(int number, shared_combiner_t flat_combiner) {
     srand(static_cast<unsigned int>(time(0) * number));
-    std::stringstream ss1;
+    //std::stringstream ss1;
     FlatCombiner::Operation<StorageSlot> *operation = flat_combiner->get_slot();
-    ss1 << number << " get slot(" << operation << ")"; my_log(ss1);
+    //ss1 << number << " get slot(" << operation << ")"; my_log(ss1);
     operation->user_slot()->init(shared_storage);
 
     std::stringstream ss;
@@ -104,52 +106,52 @@ void put_get_delete_worker(int number, shared_combiner_t flat_combiner) {
     }
 
     for (int i = 0; i < MAX_OPERATION_PER_THREAD; i++) {
-        std::stringstream ss2;
-        ss2 << number << " set put(" << keys[i] << ")"; my_log(ss2);
+        //std::stringstream ss2;
+        //ss2 << number << " set put(" << keys[i] << ")"; my_log(ss2);
         operation->set(Storage::Operation::PUT, keys[i], value);
-        std::stringstream ss3;
-        ss3 << number << " apply put(" << keys[i] << ")"; my_log(ss3);
+        //std::stringstream ss3;
+        //ss3 << number << " apply put(" << keys[i] << ")"; my_log(ss3);
         flat_combiner->apply_slot();
         check_error(operation);
 
-        std::stringstream ss4;
-        ss4 << number << " set get(" << keys[i] << ")"; my_log(ss4);
+        //std::stringstream ss4;
+        //ss4 << number << " set get(" << keys[i] << ")"; my_log(ss4);
         operation->set(Storage::Operation::GET, keys[i], value);
-        std::stringstream ss6;
-        ss6 << number << " apply get(" << keys[i] << ")"; my_log(ss6);
+        //std::stringstream ss6;
+        //ss6 << number << " apply get(" << keys[i] << ")"; my_log(ss6);
         flat_combiner->apply_slot();
         check_error(operation);
 
         std::string result = operation->user_slot()->get_data();
         EXPECT_TRUE(result == value);
         if (result != value) {
-            std::stringstream ss5;
-            ss5 << number << " Fail, result(" << result << "), value(" << value << ")"; my_log(ss5);
+            //std::stringstream ss5;
+            //ss5 << number << " Fail, result(" << result << "), value(" << value << ")"; my_log(ss5);
 
             abort();
         }
 
-        std::stringstream ss7;
-        ss7 << number << " set DELETE(" << keys[i] << ")"; my_log(ss7);
+        //std::stringstream ss7;
+        //ss7 << number << " set DELETE(" << keys[i] << ")"; my_log(ss7);
         operation->set(Storage::Operation::DELETE, keys[i], value);
-        std::stringstream ss8;
-        ss8 << number << " apply DELETE(" << keys[i] << ")"; my_log(ss8);
+        //std::stringstream ss8;
+        //ss8 << number << " apply DELETE(" << keys[i] << ")"; my_log(ss8);
         flat_combiner->apply_slot();
         check_error(operation);
 
-        std::stringstream ss9;
-        ss9 << number << " set get(" << keys[i] << ")"; my_log(ss9);
+        //std::stringstream ss9;
+        //ss9 << number << " set get(" << keys[i] << ")"; my_log(ss9);
         operation->set(Storage::Operation::GET, keys[i], value);
-        std::stringstream ss10;
-        ss10 << number << " apply get(" << keys[i] << ")"; my_log(ss10);
+        //std::stringstream ss10;
+        //ss10 << number << " apply get(" << keys[i] << ")"; my_log(ss10);
         flat_combiner->apply_slot();
         bool not_found = operation->error_code() == Storage::ErrorCode::NOT_FOUND;
-        std::stringstream ss5;
-        ss5 << number << " ErrorCode(" << operation->error_code() << ")"; my_log(ss5);
+        //std::stringstream ss5;
+        //ss5 << number << " ErrorCode(" << operation->error_code() << ")"; my_log(ss5);
         result = operation->user_slot()->get_data();
         if (!not_found) {
-            std::stringstream ss5;
-            ss5 << number << " Fail, result(" << result << ")"; my_log(ss5);
+            //std::stringstream ss5;
+            //ss5 << number << " Fail, result(" << result << ")"; my_log(ss5);
 
             abort();
         }
@@ -165,7 +167,6 @@ TEST(FlatCombineLogicTest, PutGetTest) {
     auto shared_flat_combiner = std::make_shared<FlatCombiner::FlatCombiner<StorageSlot>>();
 
     std::vector<std::thread> workers;
-    int workers_number = 4;
     for (int i = 0; i < workers_number; i++) {
         workers.emplace_back(&put_get_worker, i, std::ref(shared_flat_combiner));
     }
@@ -183,7 +184,6 @@ TEST(FlatCombineLogicTest, PutGetDeleteTest) {
     auto shared_flat_combiner = std::make_shared<FlatCombiner::FlatCombiner<StorageSlot>>();
 
     std::vector<std::thread> workers;
-    int workers_number = 4;
     for (int i = 0; i < workers_number; i++) {
         workers.emplace_back(&put_get_delete_worker, i, std::ref(shared_flat_combiner));
     }

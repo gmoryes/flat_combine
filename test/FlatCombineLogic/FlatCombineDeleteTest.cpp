@@ -24,12 +24,14 @@ std::condition_variable cv;
 std::mutex mutex;
 shared_storage_t shared_storage;
 
+
 bool check_error(FlatCombiner::Operation<StorageSlot> *operation, bool must_be = false) {
-    std::exception ex;
-    if (operation->is_error()) {
-        // TODO fix ex.what()
-        std::stringstream ss;
-        ss << "Error: " /*<< ex.what()*/ << "\n"; my_log(ss);
+
+    std::stringstream ss;
+    ss << "ErrorCode(" << operation << "): " << operation->error_code() << ", must_error(" << must_be << ")"; my_log(ss);
+
+    if (operation->error_code()) {
+
         EXPECT_TRUE(must_be);
         return true;
     }

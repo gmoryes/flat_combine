@@ -8,7 +8,7 @@
 #include <mutex>
 #include <iostream>
 
-using namespace Storage;
+using namespace Repository;
 
 TEST(StorageTest, PutGet) {
     Storage storage;

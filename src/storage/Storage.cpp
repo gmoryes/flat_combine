@@ -22,14 +22,14 @@ void StorageSlot::prepare_data(const std::string &key) {
 }
 
 std::string StorageSlot::get_data() {
-    std::stringstream ss;
-    ss << "get_data(): key(" << _key << "), " << "_value(" << _value << ")";
-    my_log(ss);
+//    std::stringstream ss;
+//    ss << "get_data(): key(" << _key << "), " << "_value(" << _value << ")";
+//    my_log(ss);
     return std::move(_value);
 }
 
 // Comparator for optimize requests
-bool StorageSlot::comparator(const task_type_with_id &a, const task_type_with_id &b) {
+bool StorageSlot::comparator(const task_type &a, const task_type &b) {
 
     // Compare keys for storage
     if (std::get<0>(a)->_key < std::get<0>(b)->_key)

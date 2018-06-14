@@ -81,7 +81,7 @@ struct Operation {
 
     // Return true if error happened, false otherwise
     int error_code() {
-        return error.load(std::memory_order_acquire);
+        return user_op.error_code;
     }
 
     // Check if slot has operation to date
@@ -127,7 +127,7 @@ public:
     /**
      * @param Combine function that aplly pending operations onto some data structure. It accepts array
      * of pending ops and allowed to modify it in any way except delete pointers
-     */ /* _slot(nullptr, orphan_slot) */
+     */
     FlatCombiner();
 
     ~FlatCombiner();
@@ -149,8 +149,8 @@ public:
 
         while (not slot->is_complete()) {
 
-            std::stringstream ss;
-            ss << "check in queue slot_1(" << slot << ")"; my_log(ss);
+            //std::stringstream ss;
+            //ss << "check in queue slot_1(" << slot << ")"; my_log(ss);
             /* In case:
              *   thread1: has_data() in slot ? Answer: no
              *   thread1: start dequeue_slot()
@@ -161,28 +161,29 @@ public:
 
             if (uint64_t generation = FlatCombiner::try_lock()) {
                 // Yep!! We are executor
-                std::stringstream ss;
-                ss << "slot(" << slot << ") is executor"; my_log(ss);
 
-                std::stringstream ss0;
-                ss0 << "check in queue slot_2(" << slot << ")"; my_log(ss0);
+                //std::stringstream ss;
+                //ss << "slot(" << slot << ") is executor"; my_log(ss);
+
+//                std::stringstream ss0;
+//                ss0 << "check in queue slot_2(" << slot << ")"; my_log(ss0);
                 if (not slot->in_queue())
                     FlatCombiner::push_to_queue(slot);
 
                 FlatCombiner::run_executor(generation);
                 FlatCombiner::unlock();
 
-                std::stringstream ss1;
-                ss1 << "slot(" << slot << ") unlock" << std::endl; my_log(ss1);
+//                std::stringstream ss1;
+//                ss1 << "slot(" << slot << ") unlock" << std::endl; my_log(ss1);
                 return;
             } else {
                 // :((
-                std::this_thread::yield();
+                //std::this_thread::yield();
             }
         }
 
-        std::stringstream ss2;
-        ss2 << "slot(" << slot << ") apply completed"; my_log(ss2);
+//        std::stringstream ss2;
+//        ss2 << "slot(" << slot << ") apply completed"; my_log(ss2);
     }
 
     /**
@@ -246,12 +247,12 @@ protected:
         // TODO: set pointer pare of "next" to null, DO NOT modify usage bit
         // TODO: if next == 0, delete pointer
 
-        std::stringstream ss1;
-        ss1 << "dequeue_slot(): slot(" << need_remove << "), parent(" << parent << ")"; my_log(ss1);
+//        std::stringstream ss1;
+//        ss1 << "dequeue_slot(): slot(" << need_remove << "), parent(" << parent << ")"; my_log(ss1);
         auto new_next = need_remove->next();
 
-        std::stringstream ss2;
-        ss2 << "dequeue_slot(): new_next(" << new_next << ")"; my_log(ss2);
+//        std::stringstream ss2;
+//        ss2 << "dequeue_slot(): new_next(" << new_next << ")"; my_log(ss2);
 
         auto copy_expected_value = need_remove;
         while (not parent->next_and_alive.compare_exchange_strong(
@@ -264,8 +265,8 @@ protected:
             parent = parent->next();
         }
 
-        std::stringstream ss3;
-        ss3 << "dequeue_slot(): cas done, parent is(" << parent << ")"; my_log(ss3);
+//        std::stringstream ss3;
+//        ss3 << "dequeue_slot(): cas done, parent is(" << parent << ")"; my_log(ss3);
         need_remove->next_and_alive.store(nullptr, std::memory_order_release);
     }
 
@@ -279,14 +280,14 @@ protected:
 
         if (not slot_to_delete->in_queue()) {
             // THe only reference to it was in ThreadLocal, can safely delete it
-            std::stringstream ss5;
-            ss5 << std::hex << "orphan_slot(" << slot_to_delete << ") delete"; my_log(ss5);
+//            std::stringstream ss5;
+//            ss5 << std::hex << "orphan_slot(" << slot_to_delete << ") delete"; my_log(ss5);
             delete slot_to_delete;
             return;
         }
 
-        std::stringstream ss5;
-        ss5 << std::hex << "orphan_slot(" << slot_to_delete << ") mark as dead"; my_log(ss5);
+//        std::stringstream ss5;
+//        ss5 << std::hex << "orphan_slot(" << slot_to_delete << ") mark as dead"; my_log(ss5);
         // Say other threads, that we are dead, executor will delete pointer
         slot_to_delete->alive_flag.store(false, std::memory_order_release);
     }
@@ -320,9 +321,9 @@ private:
         auto head = _queue.load(std::memory_order_relaxed);
 
         Operation<OpNode> *next;
-        std::stringstream ss;
-        ss << std::hex << "Before: head(" << head << "), next(" << head->next_and_alive.load(std::memory_order_relaxed) << ")";
-        ss << ", current(" << new_node << ")"; my_log(ss);
+//        std::stringstream ss;
+//        ss << std::hex << "Before: head(" << head << "), next(" << head->next_and_alive.load(std::memory_order_relaxed) << ")";
+//        ss << ", current(" << new_node << ")"; my_log(ss);
 
         do {
             next = head->next_and_alive.load(std::memory_order_acquire);
@@ -333,10 +334,10 @@ private:
             std::memory_order_release,
             std::memory_order_acquire));
 
-        std::stringstream ss1;
-        ss1 << std::hex << "After: head(" << head << "), next(" << head->next_and_alive.load(std::memory_order_relaxed) << ")";
-        ss1 << ", next(" << new_node->next_and_alive.load(std::memory_order_relaxed);
-        ss1 << ")"; my_log(ss1);
+//        std::stringstream ss1;
+//        ss1 << std::hex << "After: head(" << head << "), next(" << head->next_and_alive.load(std::memory_order_relaxed) << ")";
+//        ss1 << ", next(" << new_node->next_and_alive.load(std::memory_order_relaxed);
+//        ss1 << ")"; my_log(ss1);
 
     }
 
@@ -356,19 +357,19 @@ private:
 
         size_t n = 0;
         while (current_node != _dummy_tail) {
-            std::stringstream ss;
-            ss << "run_executor(" << generation << "): get current_node(" << std::hex << current_node << ")"; my_log(ss);
+//            std::stringstream ss;
+//            ss << "run_executor(" << generation << "): get current_node(" << std::hex << current_node << ")"; my_log(ss);
 
-            std::stringstream ss1;
-            ss1 << std::hex << "check slot for alive(" << current_node << ")"; my_log(ss1);
+//            std::stringstream ss1;
+//            ss1 << std::hex << "check slot for alive(" << current_node << ")"; my_log(ss1);
             if (current_node->is_alive()) {
 
-                std::stringstream ss1;
-                ss1 << std::hex << "slot alive_ok(" << current_node << ")"; my_log(ss1);
+//                std::stringstream ss1;
+//                ss1 << std::hex << "slot alive_ok(" << current_node << ")"; my_log(ss1);
                 if (current_node->has_data()) {
 
-                    std::stringstream ss;
-                    ss << "slot(" << current_node << ") has data"; my_log(ss);
+//                    std::stringstream ss;
+//                    ss << "slot(" << current_node << ") has data"; my_log(ss);
                     current_node->generation = generation;
                     _combine_shot[n] = current_node;
                     n++;
@@ -376,9 +377,9 @@ private:
 
                 } else if (generation - current_node->generation > MAX_AWAIT_TIME) {
 
-                    std::stringstream ss;
-                    ss << "gen of slot(" << current_node << ") = " << current_node->generation;
-                    ss << " current = " << generation; my_log(ss);
+//                    std::stringstream ss;
+//                    ss << "gen of slot(" << current_node << ") = " << current_node->generation;
+//                    ss << " current = " << generation; my_log(ss);
                     FlatCombiner::dequeue_slot(parent, current_node);
 
                     // For call next_and_alive from parent, slot->next_and_alive is zero now
@@ -388,14 +389,14 @@ private:
                 }
 
             } else {
-                std::stringstream ss1;
-                ss1 << std::hex << "slot alive_bad(" << current_node << ")"; my_log(ss1);
+//                std::stringstream ss1;
+//                ss1 << std::hex << "slot alive_bad(" << current_node << ")"; my_log(ss1);
                 FlatCombiner::dequeue_slot(parent, current_node);
 
                 // Only owner of this ThreadLocal variable could unset the alive flag, if it zero
                 // the only reference to it in parent, so we safely delete after change Next of parent
-                std::stringstream ss;
-                ss << std::hex << "delete(" << current_node << ")_2"; my_log(ss);
+//                std::stringstream ss;
+//                ss << std::hex << "delete(" << current_node << ")_2"; my_log(ss);
                 delete current_node;
 
                 // For call next_and_alive from parent, slot->next_and_alive is zero now
@@ -419,20 +420,16 @@ private:
             );
         }
 
-        std::array<int, SHOT_N> result;
-
         // Call user defined execute of operation
-        executor_tasks.at(0)->user_op.template execute<SHOT_N>(user_tasks, result, n);
+        executor_tasks.at(0)->user_op.template execute<SHOT_N>(user_tasks, n);
 
         for (size_t i = 0; i < n; i++) {
-            executor_tasks.at(i)->error.store(result.at(i), std::memory_order_release);
-            executor_tasks.at(i)->op_code.store(Operation<OpNode>::NOT_SET, std::memory_order_release);
+            executor_tasks.at(i)->op_code.store(Operation<OpNode>::NOT_SET, std::memory_order_relaxed);
             executor_tasks.at(i)->complete.store(true, std::memory_order_release);
         }
 
     }
 };
-
 
 template<typename OpNode, size_t SHOT_N>
 FlatCombiner<OpNode, SHOT_N>::FlatCombiner():
@@ -467,8 +464,6 @@ Operation<OpNode> *FlatCombiner<OpNode, SHOT_N>::get_slot() {
     return slot;
 }
 
-
 } // namespace FlatCombiner
-
 
 #endif //FLAT_COMBINE_FLATCOMBINER_H
