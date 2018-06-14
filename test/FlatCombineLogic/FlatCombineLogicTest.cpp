@@ -16,8 +16,8 @@ using shared_combiner_t = std::shared_ptr<FlatCombiner::FlatCombiner<StorageSlot
 using shared_storage_t = std::shared_ptr<Storage>;
 shared_storage_t shared_storage;
 
-const int MAX_OPERATION_PER_THREAD = 100000;
-const int workers_number = 10;
+const int MAX_OPERATION_PER_THREAD = 1e5;
+const int THREADS_NUMBER = 10;
 
 bool check_error(FlatCombiner::Operation<StorageSlot> *operation, bool must_be = false) {
 
@@ -166,7 +166,7 @@ TEST(FlatCombineLogicTest, PutGetTest) {
     auto shared_flat_combiner = std::make_shared<FlatCombiner::FlatCombiner<StorageSlot>>();
 
     std::vector<std::thread> workers;
-    for (int i = 0; i < workers_number; i++) {
+    for (int i = 0; i < THREADS_NUMBER; i++) {
         workers.emplace_back(&put_get_worker, i, std::ref(shared_flat_combiner));
     }
 
@@ -175,18 +175,18 @@ TEST(FlatCombineLogicTest, PutGetTest) {
     }
 }
 
-TEST(FlatCombineLogicTest, PutGetDeleteTest) {
-    std::cout << std::unitbuf;
-
-    shared_storage = std::make_shared<Storage>();
-    auto shared_flat_combiner = std::make_shared<FlatCombiner::FlatCombiner<StorageSlot>>();
-
-    std::vector<std::thread> workers;
-    for (int i = 0; i < workers_number; i++) {
-        workers.emplace_back(&put_get_delete_worker, i, std::ref(shared_flat_combiner));
-    }
-
-    for (auto &thread : workers) {
-        thread.join();
-    }
-}
+//TEST(FlatCombineLogicTest, PutGetDeleteTest) {
+//    std::cout << std::unitbuf;
+//
+//    shared_storage = std::make_shared<Storage>();
+//    auto shared_flat_combiner = std::make_shared<FlatCombiner::FlatCombiner<StorageSlot>>();
+//
+//    std::vector<std::thread> workers;
+//    for (int i = 0; i < THREADS_NUMBER; i++) {
+//        workers.emplace_back(&put_get_delete_worker, i, std::ref(shared_flat_combiner));
+//    }
+//
+//    for (auto &thread : workers) {
+//        thread.join();
+//    }
+//}

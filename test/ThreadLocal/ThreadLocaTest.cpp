@@ -77,8 +77,6 @@ TEST(ThreadLocalTest, WithDestructor) {
         thread.join();
     }
 
-    std::cout << "counter.load() = " << counter.load() << std::endl;
-
     EXPECT_TRUE(counter.load() == WORKERS_NUMBER);
 }
 

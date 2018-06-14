@@ -25,6 +25,7 @@ public:
         DELETE
     };
 
+    // Possible Error Codes
     enum ErrorCode {
         OK,
         NOT_FOUND,
