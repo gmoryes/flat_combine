@@ -29,6 +29,8 @@ void worker(std::shared_ptr<Storage> storage, int number) {
         keys[i] = ss_full.str();
     }
 
+    auto start = std::chrono::high_resolution_clock::now();
+
     for (int i = 0; i < MAX_OPERATION_PER_THREAD; i++) {
         EXPECT_TRUE(storage->Execute(Storage::Operation::PUT, keys[i], value) == Storage::ErrorCode::OK);
     }
@@ -38,6 +40,10 @@ void worker(std::shared_ptr<Storage> storage, int number) {
         EXPECT_TRUE(storage->Execute(Storage::Operation::GET, keys[i], result) == Storage::ErrorCode::OK);
         EXPECT_TRUE(result == value);
     }
+
+    auto finish = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = finish - start;
+    std::cout << "Time: " << elapsed.count() << "s" << std::endl;
 }
 
 TEST(StorageLoadTest, PutGet) {

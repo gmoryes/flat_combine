@@ -1,6 +1,5 @@
 #include "Storage.h"
 #include <algorithm>
-#include "Logger/Logger.h"
 #include <tuple>
 
 //tmp
@@ -22,9 +21,6 @@ void StorageSlot::prepare_data(const std::string &key) {
 }
 
 std::string StorageSlot::get_data() {
-//    std::stringstream ss;
-//    ss << "get_data(): key(" << _key << "), " << "_value(" << _value << ")";
-//    my_log(ss);
     return std::move(_value);
 }
 
@@ -44,6 +40,14 @@ bool StorageSlot::comparator(const task_type &a, const task_type &b) {
 
 void StorageSlot::init(std::shared_ptr<Storage> storage) {
     _storage = std::move(storage);
+}
+
+std::string &StorageSlot::get_key() {
+    return _key;
+}
+
+std::string &StorageSlot::get_value() {
+    return _value;
 }
 
 } // namespace Repository

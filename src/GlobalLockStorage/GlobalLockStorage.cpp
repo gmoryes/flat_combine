@@ -4,7 +4,7 @@
 
 namespace GlobalLockStorage {
 
-/* Storage implementation */
+/* GlobalLockStorage implementation */
 
 int Storage::Execute(int op_code, const std::string &key, std::string &value) {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -40,7 +40,6 @@ int Storage::Execute(int op_code, const std::string &key) {
     std::string tmp;
     return Execute(op_code, key, tmp);
 }
-
 
 }; // GlobalLockStorage
 

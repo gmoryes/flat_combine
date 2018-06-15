@@ -4,6 +4,6 @@ set(SOURCE_FILES
     )
 
 add_executable(runThreadLocalTests ${SOURCE_FILES})
-target_link_libraries(runThreadLocalTests gtest gtest_main logger)
+target_link_libraries(runThreadLocalTests gtest gtest_main)
 
 add_test(runThreadLocalTests runThreadLocalTests)

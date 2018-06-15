@@ -6,7 +6,6 @@
  */
 
 #include <pthread.h>
-#include <iostream> // TODO delete this
 
 template <typename T> class ThreadLocal {
 public:
@@ -26,12 +25,11 @@ public:
         return static_cast<T*>(result);
     }
 
-
     inline void set(T *value) {
         int success = pthread_setspecific(_th_key, static_cast<void*>(value));
         if (success) {
             std::stringstream ss;
-            ss << "Error during pthread_setspecific(), return " << success;
+            ss << "Error during pthread_setspecific(), return: " << success;
             throw std::runtime_error(ss.str());
         }
     }
@@ -39,7 +37,7 @@ public:
     T &operator*() {
         auto result = get();
         if (result == nullptr)
-            throw std::runtime_error("Try to do T* from nullptr");
+            throw std::runtime_error("Try to do dereference a null pointer");
 
         return *result;
     }
@@ -47,6 +45,5 @@ public:
 private:
     pthread_key_t _th_key;
 };
-
 
 #endif //FLAT_COMBINE_THREADLOCAL_H

@@ -4,7 +4,7 @@ set(SOURCE_FILES
         )
 
 add_executable(runGlobalLockStorageLogicTests ${SOURCE_FILES})
-target_link_libraries(runGlobalLockStorageLogicTests gtest gtest_main global_lock_storage logger)
+target_link_libraries(runGlobalLockStorageLogicTests gtest gtest_main global_lock_storage)
 
 add_test(runGlobalLockStorageLogicTests runGlobalLockStorageLogicTests)
 
@@ -14,6 +14,6 @@ set(SOURCE_FILES
         )
 
 add_executable(runGlobalLockStorageLoadTest ${SOURCE_FILES})
-target_link_libraries(runGlobalLockStorageLoadTest gtest gtest_main global_lock_storage logger)
+target_link_libraries(runGlobalLockStorageLoadTest gtest gtest_main global_lock_storage)
 
 add_test(runGlobalLockStorageLoadTest runGlobalLockStorageLoadTest)
