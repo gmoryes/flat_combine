@@ -11,7 +11,7 @@
 using namespace GlobalLockStorage;
 
 const int MAX_OPERATION_PER_THREAD = 1e5;
-const int THREADS_NUMBER = 10;
+const int THREADS_NUMBER = 4;
 
 void worker(std::shared_ptr<Storage> storage, int number) {
     srand(static_cast<unsigned int>(time(0) * number));

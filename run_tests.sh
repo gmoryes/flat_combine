@@ -5,4 +5,5 @@
 ./test/FlatCombineLogic/runFlatCombineDeleteTest
 ./test/GlobalLockStorage/runGlobalLockStorageLoadTest 
 ./test/GlobalLockStorage/runGlobalLockStorageLogicTests
+./test/ArrayUsageExample/runArrayUsageExample
 ./test/Storage/runStorageTests

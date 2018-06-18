@@ -113,14 +113,15 @@ struct Operation {
      * @return true if slot is still in queue, check that next_and_alive non zero
      */
     bool in_queue() const {
-        return next_and_alive.load(std::memory_order_acquire) != nullptr;
+        return next_and_alive.load(std::memory_order_relaxed) != nullptr;
     }
 
     /**
      * @return true is slot is alive
      */
     bool is_alive() const {
-        return alive_flag.load(std::memory_order_acquire);
+        //return alive_flag.load(std::memory_order_acquire);
+        return alive_flag.load();
     }
 };
 
@@ -131,7 +132,7 @@ struct Operation {
  * Class for a single pending operation descriptor. Must provides following API:
  * - void prepare_data(args...) - prepare data, that will use common structure for request
  * - int error_code - field, in which stored the result of operation executine
- * - execute(std::array<std::pair<OpNode*, int>> tasks, int n) - function, that passes tasks to shared
+ * - execute(std::array<std::pair<OpNode*, int>> tasks, size_t n) - function, that passes tasks to shared
  *   structure, in array stored pointer to user-defined slots and op_code for each of them. The second
  *   argumnet - amount of tasks in array.
  *
@@ -218,7 +219,7 @@ public:
             } else {
 
                 // We're looser, try yield and do something usefull
-                std::this_thread::yield();
+                //std::this_thread::yield();
             }
         }
     }
@@ -364,7 +365,7 @@ private:
     /* Array of operation, to be passed to shared structure */
     std::array<Operation<OpNode>*, SHOT_N> _combine_shot;
 
-    // ThreadLocal slot for each thread
+    /* ThreadLocal slot for each thread */
     ThreadLocal<Operation<OpNode>> _slot;
 
     /**
@@ -395,7 +396,7 @@ private:
     void run_executor(uint64_t generation) {
 
         auto parent = _queue.load(std::memory_order_relaxed);
-        auto current_node = parent->next_and_alive.load(std::memory_order_relaxed);
+        auto current_node = parent->next_and_alive.load(std::memory_order_acquire);
 
         size_t n = 0;
 

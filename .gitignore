@@ -5,4 +5,5 @@ xcode_build/
 tsan_build/
 mac_build/
 asan_build/
+ubuntu_build/
 build/

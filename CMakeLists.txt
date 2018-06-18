@@ -8,15 +8,6 @@ set(CMAKE_CXX_FLAGS_TSAN "-g -fsanitize=thread -fno-sanitize-recover=all"
     CACHE STRING "Compiler flags in tsan build"
     FORCE)
 
-add_definitions(-DLOG_LEVEL=${LOG_LEVEL})
-if (LOG_LEVEL)
-    add_definitions(-DLOG=1)
-    message("Log is ON")
-else()
-    add_definitions(-DLOG=0)
-    message("Log is OFF")
-endif()
-
 include_directories(include)
 
 set(BUILD_GTEST ON CACHE BOOL "Builds the googletest subproject")
