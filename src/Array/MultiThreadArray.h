@@ -96,34 +96,45 @@ public:
 
     using task_type = std::pair<MultiThreadArraySlot<Type, SIZE>*, int>;
 
-    /* Need for flat combiner */
+    /* These function need for flat combiner */
+
+    /**
+     * Called by flat combiner, pass pack of tasks
+     * @tparam SHOT_N - max tasks number
+     * @param tasks - pack of tasks
+     * @param n - tasks number
+     */
     template <std::size_t SHOT_N>
     void execute(std::array<task_type, SHOT_N> &tasks, size_t n) {
         _storage->Execute(tasks, n);
     }
 
+    /* Called by flat combiner, during set of operation */
     void prepare_data(int index) {
         _index = index;
     }
 
     void prepare_data(int index, const Type &value) {
-       prepare_data(index);
+        prepare_data(index);
         _data = value;
     }
 
-
-
+    /* Special field for store error_code after executing of operation */
     int error_code;
 
     /* Some functions not related to FlatCombine */
+
+    /* Get index in slot */
     int index() const {
         return _index;
     }
 
+    /* Get data in slot */
     Type &data() {
         return _data;
     }
 
+    /* Set some data to slot */
     void data(Type &new_data) {
         _data = new_data;
     }
