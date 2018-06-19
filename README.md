@@ -250,6 +250,6 @@ cd flat_combine
 mkdir build
 cd build
 cmake ..
-make ..
+make
 ../run_test.sh
 ```
