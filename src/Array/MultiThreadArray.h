@@ -140,8 +140,8 @@ public:
     }
 
     /*
-     * Note, that after do flat_combine->get_slot(), we received empty slot
-     * (we don't have any reference to our common structure, so use want to initialize it.
+     * Note, that after do flat_combine->get_slot(), we received empty slot,
+     * so use want to initialize it.
      *
      * This could do FlatCombiner, but in this case it will overload different user data
      * types and functions.
