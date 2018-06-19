@@ -42,7 +42,7 @@ Start from *SharedStructureSlot*. It must provide next API:
 request data: `void prepate_data(args...)`.
 2. Next, we must have `execute()` method. This function called by combiner, after
 receive all slots with data for execute. It has next prototype: 
-    ```
+    ```cpp
     using task_type = std::pair<SharedStructureSlot*, int>;
     template <std::size_t SHOT_N>
     void execute(std::array<task_type, SHOT_N> &tasks, size_t n) {
@@ -92,7 +92,7 @@ slot with whom it will work. But this method return not
 `FlatCombiner::Operation<SharedStructureSlot>`.
 3. `FlatCombiner::Operation<SharedStructureSlot>` provides next API:
     1. Method to set operation into slot.
-        ```
+        ```cpp
         FlatCombiner::Operation<SharedStructureSlot>::set(int op_code, args...)
         ```
         `op_code` - code of operation.
@@ -100,16 +100,16 @@ slot with whom it will work. But this method return not
         `args...` - this arguments **passed** to suitable `prepare_data()` method in
         *SharedStructureSlot*.
     2. Get error code after execution of opearation.
-        ```
+        ```cpp
         FlatCombiner::Operation<SharedStructureSlot>::error_code()
         ```
     3. Get pointer to *SharedStructureSlot*, storead into slot wrapper.
-        ```
+        ```cpp
         FlatCombiner::Operation<SharedStructureSlot>::user_slot()
         ```
 4. Apply operation. Here we go into spin lock, until somebody (or 
 current thread, if he is lucky) execute last operation.
-    ```
+    ```cpp
     FlatCombiner::FlatCombiner<SharedStructureSlot, SHOT_N>::apply_slot()
     ```
     
@@ -117,7 +117,7 @@ current thread, if he is lucky) execute last operation.
 # Example
 That all. Let's write simple example. Our *SharedStructure* will 
 be an `Array<Type, SIZE>`. Let's implement *SharedStructureSlot*.
-```
+```cpp
 template <typename Type, std::size_t SIZE>
 class MultiThreadArraySlot {
 
@@ -153,7 +153,7 @@ About `init()` method: note, that after do flat_combine->get_slot(),
 we received empty slot, so use want to initialize it.
 
 Implementation `prepare_data`, we just set inner fields:
-```
+```cpp
 void prepare_data(int index) {
     _index = index;
 }
@@ -165,14 +165,14 @@ void prepare_data(int index, const Type &value) {
 ```
 
 Implementation `init()`, we just initialize a `_storage` field.
-```
+```cpp
 void init(const std::shared_ptr<MultiThreadArray<Type, SIZE>> &storage) {
     _storage = std::move(storage);
 }
 ```
 
 Implementation `execute()`, we just pass query to our _storage:
-```
+```cpp
 template <std::size_t SHOT_N>
 void execute(std::array<task_type, SHOT_N> &tasks, size_t n) {
     _storage->Execute(tasks, n);
@@ -180,7 +180,7 @@ void execute(std::array<task_type, SHOT_N> &tasks, size_t n) {
 ```
 
 We use some method `Execute()` of `_storage` object. It looks like:
-```
+```cpp
 enum ErrorCode {
     OK,
     BAD_INDEX // etc...
@@ -207,7 +207,7 @@ You can find full code of these classes at **[MultiThreadArray.h](https://github
 
 The next step - how to use it with *FlatCombiner*.
 Create an array of type `int` and size `64` and `flat_combine`.
-```
+```cpp
 // master
 
 using multithread_array_slot_type = MultiThreadArraySlot<int, 64>;
@@ -218,7 +218,7 @@ auto flat_combine = std::make_shared<
 
 ```
 
-```
+```cpp
 // worker
 // Get our ThreadLocal slot
 FlatCombiner::Operation<multithread_array_slot_type> *slot = flat_combine->get_slot();
