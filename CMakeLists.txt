@@ -18,7 +18,4 @@ add_subdirectory(third-party/googletest-release-1.8.0)
 add_subdirectory(test)
 add_subdirectory(src)
 
-add_executable(main main.cpp)
-target_link_libraries(main storage)
-
 

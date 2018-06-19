@@ -242,3 +242,14 @@ bool success = slot->error_code() == multithread_array_type::ErrorCode::OK);
 ```
 
 The full usage with all cases could be find at **[ArrayUsageExample.cpp](https://github.com/gmoryes/flat_combine/blob/master/test/ArrayUsageExample/ArrayUsageExample.cpp)**.
+
+# Run tests
+
+```sh
+cd flat_combine
+mkdir build
+cd build
+cmake ..
+make ..
+../run_test.sh
+```
