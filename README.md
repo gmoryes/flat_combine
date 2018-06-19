@@ -244,6 +244,9 @@ flat_combine->apply_slot();
 
 // Check that all ok
 bool success = slot->error_code() == multithread_array_type::ErrorCode::OK);
+
+// Don't forget about detach()
+flat_combine->detach();
 ```
 
 The full usage with all cases could be find at **[ArrayUsageExample.cpp](https://github.com/gmoryes/flat_combine/blob/master/test/ArrayUsageExample/ArrayUsageExample.cpp)**.
