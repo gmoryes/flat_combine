@@ -71,7 +71,7 @@ struct Operation {
      * @param args - arguments of type Args
      */
     template <typename... Args>
-    void set(int op_code_, Args... args) {
+    void set(int op_code_, Args&&... args) {
         // Call user defined function
         user_op.prepare_data(std::forward<Args>(args)...);
 
