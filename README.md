@@ -27,7 +27,7 @@ thread local variable, so each thread has it's *SharedStructureSlot*.
 
 ### Algorithm
 1. FlatCombiner keep alive lock free queue of thread local slots.
-2. Each thread worker receive it's thread local slot. Set there some 
+2. Each thread worker receives it's thread local slot. Set there some 
 operation and say FlatCombiner to execute it.
 3. In time of execution, only one thread became executor. He became combiner,
 and run throw the queue and get all slots where exists data to execute. Other threads
@@ -44,6 +44,7 @@ request data: `void prepate_data(args...)`.
 receive all slots with data for execute. It has next prototype: 
     ```cpp
     using task_type = std::pair<SharedStructureSlot*, int>;
+    
     template <std::size_t SHOT_N>
     void execute(std::array<task_type, SHOT_N> &tasks, size_t n) {
         /* 
@@ -74,7 +75,7 @@ receive all slots with data for execute. It has next prototype:
     
     `n` - current tasks number.
     
-3. *SharedStructureSlot* must have integer field - *error_code*. Here combiner
+3. *SharedStructureSlot* must have integer field - *error_code*. There combiner
 will store the result of execution (OK or some error code).
 
 **Note:** Code of operation must start from **one**. Because zero operation code
@@ -99,11 +100,11 @@ slot with whom it will work. But this method return not
         
         `args...` - this arguments **passed** to suitable `prepare_data()` method in
         *SharedStructureSlot*.
-    2. Get error code after execution of opearation.
+    2. Get error code after execution of operation.
         ```cpp
         FlatCombiner::Operation<SharedStructureSlot>::error_code()
         ```
-    3. Get pointer to *SharedStructureSlot*, storead into slot wrapper.
+    3. Get pointer to *SharedStructureSlot*, stored into slot wrapper.
         ```cpp
         FlatCombiner::Operation<SharedStructureSlot>::user_slot()
         ```
@@ -138,70 +139,70 @@ private:
     std::shared_ptr<MultiThreadArray<Type, SIZE>> _storage;
     Type _data;
     int _index;
-} 
+}
 ```
 
 `MultiThreadArray<Type, SIZE>` is some structure, which represent 
-an Array of type Type and size of SIZE.
+an Array of type `Type` and size of `SIZE`.
 
 In slot I defined `_data` field, where will store the value of data 
 with type `Type`. And `_index` for number of array cell.
 
 Also define *must have* API methods (see upper desc for more details).
 
-About `init()` method: note, that after do flat_combine->get_slot(), 
-we received empty slot, so use want to initialize it.
+About `init()` method: note, that after do `flat_combine->get_slot()`, 
+we receive empty slot, so we want to initialize it.
 
-Implementation `prepare_data`, we just set inner fields:
-```cpp
-void prepare_data(int index) {
+1. Implementation `prepare_data`, we just set inner fields:
+    ```cpp
+    void prepare_data(int index) {
     _index = index;
-}
-
-void prepare_data(int index, const Type &value) {
+    }
+    
+    void prepare_data(int index, const Type &value) {
     prepare_data(index);
     _data = value;
-}
-```
+    }
+    ```
 
-Implementation `init()`, we just initialize a `_storage` field.
-```cpp
-void init(const std::shared_ptr<MultiThreadArray<Type, SIZE>> &storage) {
-    _storage = std::move(storage);
-}
-```
+2. Implementation `init()`, we just initialize a `_storage` field.
+    ```cpp
+    void init(const std::shared_ptr<MultiThreadArray<Type, SIZE>> &storage) {
+        _storage = std::move(storage);
+    }
+    ```
 
-Implementation `execute()`, we just pass query to our _storage:
-```cpp
-template <std::size_t SHOT_N>
-void execute(std::array<task_type, SHOT_N> &tasks, size_t n) {
-    _storage->Execute(tasks, n);
-}
-```
+3. Implementation `execute()`, we just pass query to our _storage:
+    ```cpp
+    template <std::size_t SHOT_N>
+    void execute(std::array<task_type, SHOT_N> &tasks, size_t n) {
+        _storage->Execute(tasks, n);
+    }
+    ```
 
-We use some method `Execute()` of `_storage` object. It looks like:
-```cpp
-enum ErrorCode {
-    OK,
-    BAD_INDEX // etc...
-}
-
-template <std::size_t SHOT_N>
-void Execute(std::array<task_type, SHOT_N> &tasks, size_t n) {
+    We use some method `Execute()` of `_storage` object. It looks like:
+    ```cpp
+    enum ErrorCode {
+        OK,
+        BAD_INDEX // etc...
+    }
     
-    MultiThreadArraySlot<Type, SIZE> *slot;
-    int op_code;
-    
-    for (size_t i = 0; i < n; i++) {
-        std::tie(slot, op_code) = tasks.at(i);
+    template <std::size_t SHOT_N>
+    void Execute(std::array<task_type, SHOT_N> &tasks, size_t n) {
         
-        switch (op_code) {
-             // Code ...
-             slot->error_code = Operation::OK;
+        MultiThreadArraySlot<Type, SIZE> *slot;
+        int op_code;
+        
+        for (size_t i = 0; i < n; i++) {
+            std::tie(slot, op_code) = tasks.at(i);
+            
+            switch (op_code) {
+                 // Code ...
+                 slot->error_code = Operation::OK;
+            }
         }
     }
-}
-```
+    ```
 
 You can find full code of these classes at **[MultiThreadArray.h](https://github.com/gmoryes/flat_combine/blob/master/src/Array/MultiThreadArray.h)**.
 
@@ -213,13 +214,12 @@ Create an array of type `int` and size `64` and `flat_combine`.
 using multithread_array_slot_type = MultiThreadArraySlot<int, 64>;
 
 auto array = std::make_shared<MultiThreadArray<int, 64>>();
-auto flat_combine = std::make_shared<
-                        FlatCombiner<multithread_array_slot_type>();
-
+auto flat_combine = std::make_shared<FlatCombiner<multithread_array_slot_type>();
 ```
 
 ```cpp
 // worker
+
 // Get our ThreadLocal slot
 FlatCombiner::Operation<multithread_array_slot_type> *slot = flat_combine->get_slot();
 
