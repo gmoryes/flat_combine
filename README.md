@@ -113,7 +113,12 @@ current thread, if he is lucky) execute last operation.
     ```cpp
     FlatCombiner::FlatCombiner<SharedStructureSlot, SHOT_N>::apply_slot()
     ```
-    
+5. Detach method. After end of working with FlatCombiner, worker
+ **must** detach from it to avoid memory leak.
+    ```cpp
+    FlatCombiner::FlatCombiner<SharedStructureSlot, SHOT_N>::detach()
+    ```
+
     
 # Example
 That all. Let's write simple example. Our *SharedStructure* will 

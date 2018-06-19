@@ -80,6 +80,8 @@ void worker(const std::shared_ptr<flat_combine_type> &flat_combine,
     slot->set(unsupported_operation, index);
     flat_combine->apply_slot();
     EXPECT_TRUE(slot->error_code() == multithread_array_type::ErrorCode::UNSUPPORTED_OPERATION);
+
+    flat_combine->detach();
 }
 
 TEST(ArrayUsageExample, Example) {
