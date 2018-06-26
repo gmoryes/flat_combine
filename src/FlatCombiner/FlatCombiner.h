@@ -13,6 +13,89 @@
 
 namespace FlatCombiner {
 
+template <typename T>
+class TaggedPointer {
+public:
+
+    static constexpr uintptr_t ALIVE_BIT = 1L << 63;
+
+    explicit TaggedPointer(T *p) {
+        _ptr.store(reinterpret_cast<uintptr_t>(p) | ALIVE_BIT, std::memory_order_relaxed);
+    }
+
+    T* get(std::memory_order &read) const {
+        return reinterpret_cast<T*>(_ptr.load(read) & ~ALIVE_BIT);
+    }
+
+    void set(std::memory_order &read, std::memory_order &write, T *value_) {
+        auto old = _ptr.load(read);
+        uintptr_t mask = old & ALIVE_BIT;
+        auto value = reinterpret_cast<uintptr_t>(value_);
+        _ptr.store(value | mask, write);
+    }
+
+    void set_flag(std::memory_order &read, std::memory_order &write) {
+        auto old = _ptr.load(read);
+        old |= ALIVE_BIT;
+        _ptr.store(old, write);
+    }
+
+    void unset_flag(std::memory_order &read, std::memory_order &write) {
+        auto old = _ptr.load(read);
+        old &= ~ALIVE_BIT;
+        _ptr.store(old, write);
+    }
+
+    bool is_flag_set(std::memory_order &read) const {
+        return (_ptr.load(read) & ALIVE_BIT) != 0;
+    }
+
+    bool compare_exchange_weak(T *&expected_, T *new_value_, std::memory_order &suc, std::memory_order &fail) {
+        auto flag = _ptr.load(std::memory_order_relaxed) & ALIVE_BIT;
+
+        auto expected = reinterpret_cast<uintptr_t>(expected_) | flag;
+        auto new_value = reinterpret_cast<uintptr_t>(new_value_) | flag;
+
+        bool result = _ptr.compare_exchange_weak(expected, new_value, suc, fail);
+        if (result)
+            return result;
+
+        // Update new value, if CAS failed
+        expected &= ~ALIVE_BIT;
+        expected_ = reinterpret_cast<T*>(expected);
+
+        return false;
+    }
+
+    bool compare_exchange_strong(T *expected_, T *new_value_,
+                                 std::memory_order &suc, std::memory_order &fail) {
+
+        auto flag = _ptr.load(std::memory_order_relaxed) & ALIVE_BIT;
+
+        auto expected = reinterpret_cast<uintptr_t>(expected_) | flag;
+        auto new_value = reinterpret_cast<uintptr_t>(new_value_) | flag;
+
+        return _ptr.compare_exchange_strong(expected, new_value, suc, fail);
+    }
+
+    void update_value_with_check(T *value_, bool flag) {
+        uintptr_t mask = flag ? ALIVE_BIT : 0;
+
+        auto expected = _ptr.load(std::memory_order_relaxed);
+        expected =~ ALIVE_BIT;
+        expected |= mask;
+
+        auto value = reinterpret_cast<uintptr_t>(value_);
+        do {
+            value &= ~ALIVE_BIT;
+            value |= (expected & ALIVE_BIT);
+        } while (!_ptr.compare_exchange_weak(expected, value, std::memory_order_release, std::memory_order_relaxed));
+    }
+
+private:
+    std::atomic<uintptr_t> _ptr;
+};
+
 /**
  * Extend user-defined pending operation type with fields required for the
  * flat combine algorithm to work
@@ -28,8 +111,7 @@ struct Operation {
     Operation ():
         user_op(),
         generation(0),
-        next_and_alive(0),
-        alive_flag(true),
+        next_and_alive(nullptr),
         op_code(NOT_SET),
         complete(false),
         error(false)
@@ -42,10 +124,7 @@ struct Operation {
     uint64_t generation;
 
     /* Pointer to the next slot */
-    std::atomic<Operation*> next_and_alive;
-
-    /* Slot alive flat */
-    std::atomic<bool> alive_flag;
+    TaggedPointer<Operation<OpNode>> next_and_alive;
 
     /* The code of current execute operation (zero means not set) */
     std::atomic<int> op_code;
@@ -71,6 +150,7 @@ struct Operation {
      * @param args - arguments of type Args
      */
     template <typename... Args>
+    // TODO перенести это в другое место
     void set(int op_code_, Args&&... args) {
         // Call user defined function
         user_op.prepare_data(std::forward<Args>(args)...);
@@ -98,30 +178,29 @@ struct Operation {
     /**
      * @return true if slot has operation to perform
      */
-    bool has_data() {
-        return op_code.load(std::memory_order_acquire) != NOT_SET;
+    bool has_data(std::memory_order &read) {
+        return op_code.load(read) != NOT_SET;
     }
 
     /**
      * @return pointer to next slot
      */
-    Operation *next() {
-        return next_and_alive.load(std::memory_order_acquire);
+    Operation *next(std::memory_order &read) {
+        return next_and_alive.get(read);
     }
 
     /**
      * @return true if slot is still in queue, check that next_and_alive non zero
      */
-    bool in_queue() const {
-        return next_and_alive.load(std::memory_order_relaxed) != nullptr;
+    bool in_queue(std::memory_order &read) const {
+        return next_and_alive.get(read) != nullptr;
     }
 
     /**
      * @return true is slot is alive
      */
-    bool is_alive() const {
-        //return alive_flag.load(std::memory_order_acquire);
-        return alive_flag.load();
+    bool is_alive(std::memory_order &read) const {
+        return next_and_alive.is_flag_set(read);
     }
 };
 
@@ -131,7 +210,7 @@ struct Operation {
  * @template_param OpNode
  * Class for a single pending operation descriptor. Must provides following API:
  * - void prepare_data(args...) - prepare data, that will use common structure for request
- * - int error_code - field, in which stored the result of operation executine
+ * - int error_code - field, in which stored the result of operation execution
  * - execute(std::array<std::pair<OpNode*, int>> tasks, size_t n) - function, that passes tasks to shared
  *   structure, in array stored pointer to user-defined slots and op_code for each of them. The second
  *   argumnet - amount of tasks in array.
@@ -157,8 +236,8 @@ public:
         auto dummy_slot_tail = new Operation<OpNode>();
         _dummy_tail = dummy_slot_tail;
 
-        // Head and Tail are dummy slots, that usefull for preserve invariant, that
-        // all slots have next slot, if notm that means they were dequeued.
+        // Head and Tail are dummy slots, that useful for preserve invariant, that
+        // all slots have next slot, if not that means they were dequeued.
 
         // Push Tail after Head
         FlatCombiner::push_to_queue(dummy_slot_tail);
@@ -200,7 +279,7 @@ public:
         while (not slot->is_complete()) {
 
             // Need check in each loop
-            if (not slot->in_queue())
+            if (not slot->in_queue(std::memory_order_acquire))
                 FlatCombiner::push_to_queue(slot);
 
             // Try lock
@@ -284,10 +363,10 @@ protected:
       * @param parent - parent of "need_remove" slot
       * @param need_remove - slot to be removed from queue
       */
-    void dequeue_slot(Operation<OpNode> *parent, Operation<OpNode> *need_remove) {
+    void dequeue_slot(Operation<OpNode> *parent, Operation<OpNode> *need_remove, bool is_alive) {
 
         // Get next->next
-        auto new_next = need_remove->next();
+        auto new_next = need_remove->next(std::memory_order_relaxed);
 
         // Change next slot with CAS
         auto copy_expected_value = need_remove;
@@ -297,12 +376,11 @@ protected:
             std::memory_order_release,
             std::memory_order_acquire)) {
 
-            need_remove = copy_expected_value;
-            parent = parent->next();
+            // Get newest version of parent
+            parent = parent->next(std::memory_order_acquire);
         }
 
-        // Set nullptr next to removed slot
-        need_remove->next_and_alive.store(nullptr, std::memory_order_release);
+        need_remove->next_and_alive.update_value_with_check(nullptr, is_alive);
     }
 
     /**
@@ -378,10 +456,10 @@ private:
         auto head = _queue.load(std::memory_order_relaxed);
         Operation<OpNode> *next;
 
-        // Do CAS of head->next, and new_node
+        // Do CAS of head->next, and new_node //memory_order_acquire
+        next = head->next_and_alive.get(std::memory_order_relaxed);
         do {
-            next = head->next_and_alive.load(std::memory_order_acquire);
-            new_node->next_and_alive.store(next, std::memory_order_relaxed);
+            new_node->next_and_alive.set(std::memory_order_relaxed, std::memory_order_relaxed, next);
         } while (!head->next_and_alive.compare_exchange_weak(
             next,
             new_node,
@@ -396,18 +474,20 @@ private:
     void run_executor(uint64_t generation) {
 
         auto parent = _queue.load(std::memory_order_relaxed);
-        auto current_node = parent->next_and_alive.load(std::memory_order_acquire);
+
+        // Get the newest version of parent->next
+        auto current_node = parent->next_and_alive.get(std::memory_order_acquire);
 
         size_t n = 0;
 
         // Scan queue until get dummy tail
         while (current_node != _dummy_tail) {
 
-            // Don't work with detached() slots
-            if (current_node->is_alive()) {
+            // Don't work with detached() slots // acquire
+            if (current_node->is_alive(std::memory_order_relaxed)) {
 
                 // If current slot has data, add it to request array
-                if (current_node->has_data()) {
+                if (current_node->has_data(std::memory_order_relaxed)) {
 
                     current_node->generation = generation;
                     _combine_shot[n] = current_node;
@@ -438,7 +518,7 @@ private:
                 current_node = parent;
             }
 
-            current_node = current_node->next_and_alive.load(std::memory_order_acquire);
+            current_node = current_node->next_and_alive.get(std::memory_order_acquire);
         }
 
         // Do combine shot (execute all operations stored by executor)
