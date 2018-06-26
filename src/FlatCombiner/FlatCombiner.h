@@ -207,10 +207,6 @@ public:
             if (uint64_t generation = FlatCombiner::try_lock()) {
                 // Yep!! We are executor
 
-                // Previous executor could dequeue us
-                if (not slot->in_queue())
-                    FlatCombiner::push_to_queue(slot);
-
                 // Call executor
                 FlatCombiner::run_executor(generation);
                 FlatCombiner::unlock();
