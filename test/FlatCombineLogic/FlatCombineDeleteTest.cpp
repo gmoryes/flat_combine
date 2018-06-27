@@ -16,7 +16,7 @@
 using namespace Repository;
 using shared_combiner_t = std::shared_ptr<FlatCombiner::FlatCombiner<StorageSlot>>;
 using shared_storage_t = std::shared_ptr<Storage>;
-const int MAX_OPERATION_PER_THREAD = 1000;
+const int MAX_OPERATION_PER_THREAD = 1e5;
 
 std::atomic<int> alive_workers_number(0);
 std::condition_variable cv;

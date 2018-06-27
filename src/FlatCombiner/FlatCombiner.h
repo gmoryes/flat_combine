@@ -20,37 +20,34 @@ public:
     static constexpr uintptr_t ALIVE_BIT = 1L << 63;
 
     explicit TaggedPointer(T *p) {
-        _ptr.store(reinterpret_cast<uintptr_t>(p) | ALIVE_BIT, std::memory_order_relaxed);
+        _ptr.store(reinterpret_cast<uintptr_t>(p) | ALIVE_BIT);
     }
 
-    T* get(std::memory_order &read) const {
+    T* get(std::memory_order read) const {
         return reinterpret_cast<T*>(_ptr.load(read) & ~ALIVE_BIT);
     }
 
-    void set(std::memory_order &read, std::memory_order &write, T *value_) {
+    void set(T *value_,
+             std::memory_order read = std::memory_order_relaxed,
+             std::memory_order write = std::memory_order_relaxed) {
+
         auto old = _ptr.load(read);
         uintptr_t mask = old & ALIVE_BIT;
         auto value = reinterpret_cast<uintptr_t>(value_);
         _ptr.store(value | mask, write);
     }
 
-    void set_flag(std::memory_order &read, std::memory_order &write) {
-        auto old = _ptr.load(read);
-        old |= ALIVE_BIT;
-        _ptr.store(old, write);
-    }
-
-    void unset_flag(std::memory_order &read, std::memory_order &write) {
+    void unset_flag(std::memory_order read, std::memory_order write) {
         auto old = _ptr.load(read);
         old &= ~ALIVE_BIT;
         _ptr.store(old, write);
     }
 
-    bool is_flag_set(std::memory_order &read) const {
+    bool is_flag_set(std::memory_order read) const {
         return (_ptr.load(read) & ALIVE_BIT) != 0;
     }
 
-    bool compare_exchange_weak(T *&expected_, T *new_value_, std::memory_order &suc, std::memory_order &fail) {
+    bool compare_exchange_weak(T *&expected_, T *new_value_, std::memory_order suc, std::memory_order fail) {
         auto flag = _ptr.load(std::memory_order_relaxed) & ALIVE_BIT;
 
         auto expected = reinterpret_cast<uintptr_t>(expected_) | flag;
@@ -68,7 +65,7 @@ public:
     }
 
     bool compare_exchange_strong(T *expected_, T *new_value_,
-                                 std::memory_order &suc, std::memory_order &fail) {
+                                 std::memory_order suc, std::memory_order fail) {
 
         auto flag = _ptr.load(std::memory_order_relaxed) & ALIVE_BIT;
 
@@ -78,7 +75,8 @@ public:
         return _ptr.compare_exchange_strong(expected, new_value, suc, fail);
     }
 
-    void update_value_with_check(T *value_, bool flag) {
+    bool update_value_with_check(T *value_, bool flag) {
+        bool result = true;
         uintptr_t mask = flag ? ALIVE_BIT : 0;
 
         auto expected = _ptr.load(std::memory_order_relaxed);
@@ -89,7 +87,11 @@ public:
         do {
             value &= ~ALIVE_BIT;
             value |= (expected & ALIVE_BIT);
+
+            result = (mask == (expected & ALIVE_BIT));
         } while (!_ptr.compare_exchange_weak(expected, value, std::memory_order_release, std::memory_order_relaxed));
+
+        return result;
     }
 
 private:
@@ -164,8 +166,8 @@ struct Operation {
     /**
      * @return true if operation complete, false otherwise
      */
-    bool is_complete() {
-        return complete.load(std::memory_order_acquire);
+    bool is_complete(std::memory_order read) {
+        return complete.load(read);
     }
 
     /**
@@ -178,28 +180,28 @@ struct Operation {
     /**
      * @return true if slot has operation to perform
      */
-    bool has_data(std::memory_order &read) {
+    bool has_data(std::memory_order read) {
         return op_code.load(read) != NOT_SET;
     }
 
     /**
      * @return pointer to next slot
      */
-    Operation *next(std::memory_order &read) {
+    Operation *next(std::memory_order read) {
         return next_and_alive.get(read);
     }
 
     /**
      * @return true if slot is still in queue, check that next_and_alive non zero
      */
-    bool in_queue(std::memory_order &read) const {
+    bool in_queue(std::memory_order read) const {
         return next_and_alive.get(read) != nullptr;
     }
 
     /**
      * @return true is slot is alive
      */
-    bool is_alive(std::memory_order &read) const {
+    bool is_alive(std::memory_order read) const {
         return next_and_alive.is_flag_set(read);
     }
 };
@@ -230,7 +232,7 @@ public:
 
         // Create Head of lock-free queue
         auto dummy_slot_head = new Operation<OpNode>();
-        _queue.store(dummy_slot_head, std::memory_order_relaxed);
+        _queue.store(dummy_slot_head);
 
         // Create Tail of lock-free queue
         auto dummy_slot_tail = new Operation<OpNode>();
@@ -246,7 +248,7 @@ public:
     ~FlatCombiner() {
         // All threads should do detach() before FlatCombiner destructor call (!)
         delete _dummy_tail;
-        delete _queue;
+        delete get_queue_head();
     }
 
     /**
@@ -274,9 +276,9 @@ public:
         // Get thread local slot
         Operation<OpNode> *slot = _slot.get();
         if (slot == nullptr)
-            throw std::runtime_error("Received nullptr");
+            throw std::runtime_error("Received nullptr slot");
 
-        while (not slot->is_complete()) {
+        while (not slot->is_complete(std::memory_order_acquire)) {
 
             // Need check in each loop
             if (not slot->in_queue(std::memory_order_acquire))
@@ -285,10 +287,6 @@ public:
             // Try lock
             if (uint64_t generation = FlatCombiner::try_lock()) {
                 // Yep!! We are executor
-
-                // Previous executor could dequeue us
-                if (not slot->in_queue())
-                    FlatCombiner::push_to_queue(slot);
 
                 // Call executor
                 FlatCombiner::run_executor(generation);
@@ -362,14 +360,15 @@ protected:
       * under "lock" to eliminate concurrent queue modifications
       * @param parent - parent of "need_remove" slot
       * @param need_remove - slot to be removed from queue
+      * @return need_remove.is_alive == is_alive (can be not equal in case of concurrent access)
       */
-    void dequeue_slot(Operation<OpNode> *parent, Operation<OpNode> *need_remove, bool is_alive) {
+    bool dequeue_slot(Operation<OpNode> *parent, Operation<OpNode> *need_remove, bool is_alive) {
 
         // Get next->next
         auto new_next = need_remove->next(std::memory_order_relaxed);
 
         // Change next slot with CAS
-        auto copy_expected_value = need_remove;
+        //auto copy_expected_value = need_remove;
         while (not parent->next_and_alive.compare_exchange_strong(
             need_remove,
             new_next,
@@ -380,7 +379,7 @@ protected:
             parent = parent->next(std::memory_order_acquire);
         }
 
-        need_remove->next_and_alive.update_value_with_check(nullptr, is_alive);
+        return need_remove->next_and_alive.update_value_with_check(nullptr, is_alive);
     }
 
     /**
@@ -391,7 +390,7 @@ protected:
      */
     static void orphan_slot(Operation<OpNode> *slot_to_delete) {
 
-        if (not slot_to_delete->in_queue()) {
+        if (not slot_to_delete->in_queue(std::memory_order_acquire)) {
             // If slot not in queue, the only reference to it
             // was in ThreadLocal, can safely delete it
             delete slot_to_delete;
@@ -400,7 +399,7 @@ protected:
 
         // Else if we are in queue, let say other threads, that we are
         // dead, executor will delete pointer
-        slot_to_delete->alive_flag.store(false, std::memory_order_release);
+        slot_to_delete->next_and_alive.unset_flag(std::memory_order_relaxed, std::memory_order_release);
     }
 
     /**
@@ -453,27 +452,27 @@ private:
     void push_to_queue(Operation<OpNode> *new_node) {
 
         // Get Head of queue
-        auto head = _queue.load(std::memory_order_relaxed);
+        auto head = get_queue_head();
         Operation<OpNode> *next;
 
-        // Do CAS of head->next, and new_node //memory_order_acquire
+        // Do CAS of head->next, and new_node
         next = head->next_and_alive.get(std::memory_order_relaxed);
         do {
-            new_node->next_and_alive.set(std::memory_order_relaxed, std::memory_order_relaxed, next);
+            new_node->next_and_alive.set(next);
         } while (!head->next_and_alive.compare_exchange_weak(
             next,
             new_node,
             std::memory_order_release,
-            std::memory_order_acquire));
+            std::memory_order_relaxed));
     }
 
     /**
      * Function that run the winner of try_lock() (executor)
-     * @param generation - current generetion, for dequeue old slots
+     * @param generation - current generation, for dequeue old slots
      */
     void run_executor(uint64_t generation) {
 
-        auto parent = _queue.load(std::memory_order_relaxed);
+        auto parent = get_queue_head();
 
         // Get the newest version of parent->next
         auto current_node = parent->next_and_alive.get(std::memory_order_acquire);
@@ -497,7 +496,12 @@ private:
                 // Check if slot has expired
                 } else if (generation - current_node->generation > MAX_AWAIT_TIME) {
 
-                    FlatCombiner::dequeue_slot(parent, current_node);
+                    bool was_alive = FlatCombiner::dequeue_slot(parent, current_node, /* is_alive = */ true);
+                    if (!was_alive) {
+                        // We thought, that current_node was alive, but because of concurrent access it's not
+                        // So the last pointer here, we can safely delete it.
+                        delete current_node;
+                    }
 
                     // For call next_and_alive from parent, slot->next_and_alive is zero after dequeue_slot()
                     current_node = parent;
@@ -508,7 +512,10 @@ private:
             } else {
                 // In this case slot has detached()
 
-                FlatCombiner::dequeue_slot(parent, current_node);
+                bool was_dead = FlatCombiner::dequeue_slot(parent, current_node, /* is_alive = */ false);
+
+                // Must be always dead
+                assert(was_dead);
 
                 // Only owner of this ThreadLocal variable could unset the alive flag, if it zero
                 // here the only reference to it, so we safely delete after change Next of parent
@@ -521,8 +528,12 @@ private:
             current_node = current_node->next_and_alive.get(std::memory_order_acquire);
         }
 
-        // Do combine shot (execute all operations stored by executor)
-        FlatCombiner::combine_shot(_combine_shot, n);
+        try {
+            // Do combine shot (execute all operations stored by executor)
+            FlatCombiner::combine_shot(_combine_shot, n);
+        } catch (std::exception &exception) {
+            std::cerr << "Exception after combine_shot(): " << exception.what() << std::endl;
+        }
     }
 
     /**
@@ -549,7 +560,10 @@ private:
             executor_tasks.at(i)->op_code.store(Operation<OpNode>::NOT_SET, std::memory_order_relaxed);
             executor_tasks.at(i)->complete.store(true, std::memory_order_release);
         }
+    }
 
+    inline Operation<OpNode>* get_queue_head() const {
+        return _queue.load(std::memory_order_relaxed);
     }
 };
 

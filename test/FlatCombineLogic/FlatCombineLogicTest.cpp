@@ -15,7 +15,7 @@ using shared_combiner_t = std::shared_ptr<FlatCombiner::FlatCombiner<StorageSlot
 using shared_storage_t = std::shared_ptr<Storage>;
 shared_storage_t shared_storage;
 
-const int MAX_OPERATION_PER_THREAD = 1e5;
+const int MAX_OPERATION_PER_THREAD = 1e6;
 const int THREADS_NUMBER = 4;
 
 bool check_error(FlatCombiner::Operation<StorageSlot> *operation, bool must_be = false) {

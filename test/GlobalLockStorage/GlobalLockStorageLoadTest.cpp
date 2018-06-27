@@ -10,7 +10,7 @@
 
 using namespace GlobalLockStorage;
 
-const int MAX_OPERATION_PER_THREAD = 1e5;
+const int MAX_OPERATION_PER_THREAD = 1e6;
 const int THREADS_NUMBER = 4;
 
 void worker(std::shared_ptr<Storage> storage, int number) {
