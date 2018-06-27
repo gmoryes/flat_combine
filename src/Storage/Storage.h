@@ -92,7 +92,6 @@ public:
     template<std::size_t SHOT_N>
     void Execute(std::array<task_type, SHOT_N> &tasks, size_t n) {
 
-        std::lock_guard<std::mutex> lock(_mutex);
         int op_code;
         StorageSlot *slot;
         auto hint = _storage.begin();
@@ -140,7 +139,6 @@ public:
     }
 
 private:
-    std::mutex _mutex;
     std::map<std::string, std::string> _storage;
 };
 

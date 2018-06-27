@@ -10,8 +10,10 @@
 
 using namespace GlobalLockStorage;
 
-const int MAX_OPERATION_PER_THREAD = 1e5;
+const int MAX_OPERATION_PER_THREAD = 1e6;
 const int THREADS_NUMBER = 4;
+
+std::mutex mutex_for_timer;
 
 void worker(std::shared_ptr<Storage> storage, int number) {
     srand(static_cast<unsigned int>(time(0) * number));
@@ -41,9 +43,12 @@ void worker(std::shared_ptr<Storage> storage, int number) {
         EXPECT_TRUE(result == value);
     }
 
-    auto finish = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = finish - start;
-    std::cout << "Time: " << elapsed.count() << "s" << std::endl;
+    {
+        std::lock_guard<std::mutex> lock(mutex_for_timer);
+        auto finish = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = finish - start;
+        std::cout << "Time: " << elapsed.count() << "s" << std::endl;
+    }
 }
 
 TEST(StorageLoadTest, PutGet) {

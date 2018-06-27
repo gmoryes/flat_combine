@@ -18,73 +18,74 @@ void worker(const std::shared_ptr<flat_combine_type> &flat_combine,
             int thread_number) {
 
     // Get our ThreadLocal slot
-    FlatCombiner::Operation<multithread_array_slot_type> *slot = flat_combine->get_slot();
+    multithread_array_slot_type *slot = flat_combine->get_slot();
 
     // Initialize it by our array
-    slot->user_slot()->init(array);
-
+    slot->init(array);
+    
     // Set some request to slot (1)
     int index = thread_number; // Number from 0 to WORKERS_NUMBER
     int value = 42;
-    slot->set(multithread_array_type::Operation::SET, index, value);
+    slot->prepare_data(index, value);
 
     // Say FlatCombiner to execute it
-    flat_combine->apply_slot();
+    flat_combine->apply_slot(multithread_array_type::Operation::SET);
 
     // Check that all ok
-    EXPECT_TRUE(slot->error_code() == multithread_array_type::ErrorCode::OK);
+    EXPECT_TRUE(slot->error_code == multithread_array_type::ErrorCode::OK);
 
     // Set another request (2)
-    slot->set(multithread_array_type::Operation::GET, index);
+    slot->prepare_data(index);
 
     // Apply it
-    flat_combine->apply_slot();
+    flat_combine->apply_slot(multithread_array_type::Operation::GET);
 
     // Check that all ok
-    EXPECT_TRUE(slot->error_code() == multithread_array_type::ErrorCode::OK);
+    EXPECT_TRUE(slot->error_code == multithread_array_type::ErrorCode::OK);
 
     // Get data
-    int result = slot->user_slot()->data();
+    int result = slot->data();
 
     // Expect we received our value
     EXPECT_TRUE(result == value);
 
     // Set another request (3)
-    slot->set(multithread_array_type::Operation::SET_TO_ZERO, index);
+    slot->prepare_data(index);
 
     // Apply it
-    flat_combine->apply_slot();
+    flat_combine->apply_slot(multithread_array_type::Operation::SET_TO_ZERO);
 
     // Check that all ok
-    EXPECT_TRUE(slot->error_code() == multithread_array_type::ErrorCode::OK);
+    EXPECT_TRUE(slot->error_code == multithread_array_type::ErrorCode::OK);
 
     // Lets check that array[index] == 0
-    slot->set(multithread_array_type::Operation::GET, index);
-    flat_combine->apply_slot();
+    slot->prepare_data(index);
+    flat_combine->apply_slot(multithread_array_type::Operation::GET);
 
-    result = slot->user_slot()->data();
+    result = slot->data();
 
     // Expect that it is ZERO
     EXPECT_TRUE(result == 0);
 
     // Lets check error handler
     index = -1;
-    slot->set(multithread_array_type::Operation::GET, index);
-    flat_combine->apply_slot();
-    EXPECT_TRUE(slot->error_code() == multithread_array_type::ErrorCode::BAD_INDEX);
+    slot->prepare_data(index);
+    flat_combine->apply_slot(multithread_array_type::Operation::GET);
+    EXPECT_TRUE(slot->error_code == multithread_array_type::ErrorCode::BAD_INDEX);
 
     // Lets check another error handler
     index = 0;
     int unsupported_operation = -1;
 
-    slot->set(unsupported_operation, index);
-    flat_combine->apply_slot();
-    EXPECT_TRUE(slot->error_code() == multithread_array_type::ErrorCode::UNSUPPORTED_OPERATION);
+    slot->prepare_data(index);
+    flat_combine->apply_slot(unsupported_operation);
+    EXPECT_TRUE(slot->error_code == multithread_array_type::ErrorCode::UNSUPPORTED_OPERATION);
 
     flat_combine->detach();
 }
 
 TEST(ArrayUsageExample, Example) {
+    std::cout << std::unitbuf;
     auto array = std::make_shared<multithread_array_type>();
     auto flat_combine = std::make_shared<flat_combine_type>();
 
