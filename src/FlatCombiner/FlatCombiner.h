@@ -13,20 +13,36 @@
 
 namespace FlatCombiner {
 
+/**
+ * Tagged pointer
+ * @tparam T - type of Pointer
+ */
 template <typename T>
 class TaggedPointer {
 public:
 
+    /* Bit mask of tag */
     static constexpr uintptr_t ALIVE_BIT = 1L << 63;
 
     explicit TaggedPointer(T *p) {
         _ptr.store(reinterpret_cast<uintptr_t>(p) | ALIVE_BIT);
     }
 
+    /**
+     * Return pointer without tag
+     * @param read
+     * @return
+     */
     T* get(std::memory_order read) const {
         return reinterpret_cast<T*>(_ptr.load(read) & ~ALIVE_BIT);
     }
 
+    /**
+     * Set pointer with tag saving
+     * @param value_ - new value
+     * @param read - read memory order
+     * @param write - write memory order
+     */
     void set(T *value_,
              std::memory_order read = std::memory_order_relaxed,
              std::memory_order write = std::memory_order_relaxed) {
@@ -37,17 +53,38 @@ public:
         _ptr.store(value | mask, write);
     }
 
+    /**
+     * Unset tag
+     * @param read - read memory order
+     * @param write - write memory order
+     */
     void unset_flag(std::memory_order read, std::memory_order write) {
         auto old = _ptr.load(read);
         old &= ~ALIVE_BIT;
         _ptr.store(old, write);
     }
 
+    /**
+     * Check if tag is set
+     * @param read - read memory order
+     * @return true if set, false otherwise
+     */
     bool is_flag_set(std::memory_order read) const {
         return (_ptr.load(read) & ALIVE_BIT) != 0;
     }
 
-    bool compare_exchange_weak(T *&expected_, T *new_value_, std::memory_order suc, std::memory_order fail) {
+    /**
+     * Represent compare_exchange_weak on atomic variable with saving tag.
+     * Update expected_ value if CAS failed
+     * @param expected_ - expected value
+     * @param new_value_ - new value
+     * @param suc - memory order in case of success CAS
+     * @param fail - memory order in case of failed CAS
+     * @return true if CAS success and false otherwise
+     */
+    bool compare_exchange_weak(T *&expected_, T *new_value_,
+                               std::memory_order suc, std::memory_order fail) {
+
         auto flag = _ptr.load(std::memory_order_relaxed) & ALIVE_BIT;
 
         auto expected = reinterpret_cast<uintptr_t>(expected_) | flag;
@@ -64,6 +101,10 @@ public:
         return false;
     }
 
+    /**
+     * Close to method - compare_exchange_weak. But not update expected_ value
+     * because that doesn't need in algorithm.
+     */
     bool compare_exchange_strong(T *expected_, T *new_value_,
                                  std::memory_order suc, std::memory_order fail) {
 
@@ -75,6 +116,12 @@ public:
         return _ptr.compare_exchange_strong(expected, new_value, suc, fail);
     }
 
+    /**
+     * Update pointer to value_
+     * @param value_ - new value
+     * @param flag - expected flag
+     * @return true if (flag is true and tag is set) or (flag is false and tag is not set), false otherwise
+     */
     bool update_value_with_check(T *value_, bool flag) {
         bool result = true;
         uintptr_t mask = flag ? ALIVE_BIT : 0;
@@ -104,23 +151,21 @@ private:
  * @tparam OpNode - type of user-defined opertation slot
  */
 template <typename OpNode>
-struct Operation {
+class Operation : public OpNode {
+public:
     /* Just beauty op_code for NOT_SET */
     enum {
         NOT_SET
     };
 
     Operation ():
-        user_op(),
+        OpNode(),
         generation(0),
         next_and_alive(nullptr),
         op_code(NOT_SET),
         complete(false),
         error(false)
     {}
-
-    /* User pending operation to be complete */
-    OpNode user_op;
 
     /* When last time this slot was detected as been in use */
     uint64_t generation;
@@ -138,43 +183,10 @@ struct Operation {
     std::atomic<bool> error;
 
     /**
-     * Return pointer to user's Operation Node
-     * @return pointer to user-defined slot
-     */
-    OpNode *user_slot() {
-        return &user_op;
-    }
-
-    /**
-     * Prepare request data before execute it
-     * @tparam Args - Types of arguments, which pass to user-defined prepare_data() function
-     * @param op_code_ - code of operation, will pass to Shared Structure
-     * @param args - arguments of type Args
-     */
-    template <typename... Args>
-    // TODO перенести это в другое место
-    void set(int op_code_, Args&&... args) {
-        // Call user defined function
-        user_op.prepare_data(std::forward<Args>(args)...);
-
-        // Drop some flags
-        complete.store(false, std::memory_order_relaxed);
-        error.store(false, std::memory_order_relaxed);
-        op_code.store(op_code_, std::memory_order_release);
-    }
-
-    /**
      * @return true if operation complete, false otherwise
      */
     bool is_complete(std::memory_order read) {
         return complete.load(read);
-    }
-
-    /**
-     * @return true if error happened, false otherwise
-     */
-    int error_code() {
-        return user_op.error_code;
     }
 
     /**
@@ -211,11 +223,9 @@ struct Operation {
  *
  * @template_param OpNode
  * Class for a single pending operation descriptor. Must provides following API:
- * - void prepare_data(args...) - prepare data, that will use common structure for request
- * - int error_code - field, in which stored the result of operation execution
  * - execute(std::array<std::pair<OpNode*, int>> tasks, size_t n) - function, that passes tasks to shared
  *   structure, in array stored pointer to user-defined slots and op_code for each of them. The second
- *   argumnet - amount of tasks in array.
+ *   argument - amount of tasks in array.
  *
  * @template_param SHOT_N
  * Maximum array size that could be passed to a single Combine function call
@@ -255,7 +265,7 @@ public:
      * @return pending operation slot to the calling thread, object stays valid as long
      * as current thread is alive or got called detach method
      */
-    Operation<OpNode> *get_slot() {
+    OpNode *get_slot() {
 
         Operation<OpNode> *slot = _slot.get();
 
@@ -270,14 +280,22 @@ public:
     /**
      * Put pending operation in the queue and try to execute it. Method gets blocked until
      * slot gets complete, in other words until slot.is_complete() returns false
+     *
+     * @param op_code_ - Code of operation to execute
      */
-    void apply_slot() {
+    void apply_slot(int op_code) {
 
         // Get thread local slot
         Operation<OpNode> *slot = _slot.get();
         if (slot == nullptr)
             throw std::runtime_error("Received nullptr slot");
 
+        // Drop some flags and show other threads, that we have op_code
+        slot->complete.store(false, std::memory_order_relaxed);
+        slot->error.store(false, std::memory_order_relaxed);
+        slot->op_code.store(op_code, std::memory_order_release);
+
+        // Always get newest version of slot to find out that slot is done
         while (not slot->is_complete(std::memory_order_acquire)) {
 
             // Need check in each loop
@@ -296,7 +314,7 @@ public:
             } else {
 
                 // We're looser, try yield and do something usefull
-                //std::this_thread::yield();
+                std::this_thread::yield();
             }
         }
     }
@@ -482,11 +500,11 @@ private:
         // Scan queue until get dummy tail
         while (current_node != _dummy_tail) {
 
-            // Don't work with detached() slots // acquire
+            // Don't work with detached() slots
             if (current_node->is_alive(std::memory_order_relaxed)) {
 
                 // If current slot has data, add it to request array
-                if (current_node->has_data(std::memory_order_relaxed)) {
+                if (current_node->has_data(std::memory_order_acquire)) {
 
                     current_node->generation = generation;
                     _combine_shot[n] = current_node;
@@ -547,17 +565,17 @@ private:
         std::array<std::pair<OpNode*, int>, SHOT_N> user_tasks;
         for (size_t i = 0; i < n; i++) {
             user_tasks.at(i) = std::make_pair(
-                &executor_tasks[i]->user_op,
+                executor_tasks[i],
                 executor_tasks[i]->op_code.load(std::memory_order_relaxed)
             );
         }
 
         // Call user defined execute of operation
-        executor_tasks.at(0)->user_op.template execute<SHOT_N>(user_tasks, n);
+        executor_tasks.at(0)->template execute<SHOT_N>(user_tasks, n);
 
         // Update some flags for flat combiner
         for (size_t i = 0; i < n; i++) {
-            executor_tasks.at(i)->op_code.store(Operation<OpNode>::NOT_SET, std::memory_order_relaxed);
+            executor_tasks.at(i)->op_code.store(Operation<OpNode>::NOT_SET, std::memory_order_release);
             executor_tasks.at(i)->complete.store(true, std::memory_order_release);
         }
     }

@@ -17,6 +17,7 @@ using namespace Repository;
 using shared_combiner_t = std::shared_ptr<FlatCombiner::FlatCombiner<StorageSlot>>;
 using shared_storage_t = std::shared_ptr<Storage>;
 const int MAX_OPERATION_PER_THREAD = 1e5;
+const int WORKERS_NUMBER = 4;
 
 std::atomic<int> alive_workers_number(0);
 std::condition_variable cv;
@@ -24,9 +25,9 @@ std::mutex mutex;
 shared_storage_t shared_storage;
 
 
-bool check_error(FlatCombiner::Operation<StorageSlot> *operation, bool must_be = false) {
+bool check_error(StorageSlot *operation, bool must_be = false) {
 
-    if (operation->error_code()) {
+    if (operation->error_code) {
 
         EXPECT_TRUE(must_be);
         return true;
@@ -42,8 +43,8 @@ void worker(int number, shared_combiner_t& flat_combiner) {
     long int ms = tp.tv_sec * 1000 + tp.tv_usec / 1000;
 
     srand(static_cast<unsigned int>(ms * number));
-    FlatCombiner::Operation<StorageSlot> *operation = flat_combiner->get_slot();
-    operation->user_slot()->init(shared_storage);
+    StorageSlot *operation = flat_combiner->get_slot();
+    operation->init(shared_storage);
 
     std::stringstream ss;
     ss << std::this_thread::get_id();
@@ -62,17 +63,17 @@ void worker(int number, shared_combiner_t& flat_combiner) {
     }
 
     for (int i = 0; i < N; i++) {
-        operation->set(Storage::Operation::PUT, keys[i], value);
-        flat_combiner->apply_slot();
+        operation->prepare_data(keys[i], value);
+        flat_combiner->apply_slot(Storage::Operation::PUT);
         check_error(operation);
     }
 
     for (int i = 0; i < N; i++) {
-        operation->set(Storage::Operation::GET, keys[i]);
-        flat_combiner->apply_slot();
+        operation->prepare_data(keys[i]);
+        flat_combiner->apply_slot(Storage::Operation::GET);
         check_error(operation);
 
-        std::string result = operation->user_slot()->get_data();
+        std::string result = operation->get_data();
         EXPECT_TRUE(result == value);
         if (result != value) {
 
@@ -93,18 +94,17 @@ TEST(FlatCombineLogicTest, PutGetDeleteTest) {
     auto shared_flat_combiner = std::make_shared<FlatCombiner::FlatCombiner<StorageSlot>>();
 
     std::vector<std::thread> workers;
-    int workers_number = 3;
     int iterations_number = 10;
     std::unique_lock<std::mutex> lock(mutex);
     int tmp = 0;
     for (int i = 0; i < iterations_number; i++) {
-        if (alive_workers_number < workers_number) {
+        if (alive_workers_number < WORKERS_NUMBER) {
             std::thread thread(&worker, tmp, std::ref(shared_flat_combiner));
             tmp++;
             alive_workers_number.fetch_add(1);
             thread.detach();
         }
-        cv.wait(lock, [&] { return alive_workers_number < workers_number; });
+        cv.wait(lock, [&] { return alive_workers_number < WORKERS_NUMBER; });
     }
 
     int current_worker_number;

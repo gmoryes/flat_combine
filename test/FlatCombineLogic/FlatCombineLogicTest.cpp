@@ -18,9 +18,11 @@ shared_storage_t shared_storage;
 const int MAX_OPERATION_PER_THREAD = 1e6;
 const int THREADS_NUMBER = 4;
 
-bool check_error(FlatCombiner::Operation<StorageSlot> *operation, bool must_be = false) {
+std::mutex mutex_for_timer;
 
-    if (operation->error_code()) {
+bool check_error(StorageSlot *operation, bool must_be = false) {
+
+    if (operation->error_code) {
 
         EXPECT_TRUE(must_be);
         return true;
@@ -31,8 +33,8 @@ bool check_error(FlatCombiner::Operation<StorageSlot> *operation, bool must_be =
 
 void put_get_worker(int number, shared_combiner_t flat_combiner) {
     srand(static_cast<unsigned int>(time(0) * number));
-    FlatCombiner::Operation<StorageSlot> *operation = flat_combiner->get_slot();
-    operation->user_slot()->init(shared_storage);
+    StorageSlot *operation = flat_combiner->get_slot();
+    operation->init(shared_storage);
 
     std::stringstream ss;
     ss << std::this_thread::get_id();
@@ -50,17 +52,17 @@ void put_get_worker(int number, shared_combiner_t flat_combiner) {
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int i = 0; i < MAX_OPERATION_PER_THREAD; i++) {
-        operation->set(Storage::Operation::PUT, keys[i], value);
-        flat_combiner->apply_slot();
+        operation->prepare_data(keys[i], value);
+        flat_combiner->apply_slot(Storage::Operation::PUT);
         check_error(operation);
     }
 
     for (int i = 0; i < MAX_OPERATION_PER_THREAD; i++) {
-        operation->set(Storage::Operation::GET, keys[i]);
-        flat_combiner->apply_slot();
+        operation->prepare_data(keys[i]);
+        flat_combiner->apply_slot(Storage::Operation::GET);
         check_error(operation);
 
-        std::string result = operation->user_slot()->get_data();
+        std::string result = operation->get_data();
         EXPECT_TRUE(result == value);
         if (result != value) {
 
@@ -68,15 +70,18 @@ void put_get_worker(int number, shared_combiner_t flat_combiner) {
         }
     }
 
-    auto finish = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = finish - start;
-    std::cout << "Time: " << elapsed.count() << "s" << std::endl;
+    {
+        std::lock_guard<std::mutex> lock(mutex_for_timer);
+        auto finish = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = finish - start;
+        std::cout << "Time: " << elapsed.count() << "s" << std::endl;
+    }
 }
 
 void put_get_delete_worker(int number, shared_combiner_t flat_combiner) {
     srand(static_cast<unsigned int>(time(0) * number));
-    FlatCombiner::Operation<StorageSlot> *operation = flat_combiner->get_slot();
-    operation->user_slot()->init(shared_storage);
+    StorageSlot *operation = flat_combiner->get_slot();
+    operation->init(shared_storage);
 
     std::stringstream ss;
     ss << std::this_thread::get_id();
@@ -94,38 +99,40 @@ void put_get_delete_worker(int number, shared_combiner_t flat_combiner) {
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int i = 0; i < MAX_OPERATION_PER_THREAD; i++) {
-        operation->set(Storage::Operation::PUT, keys[i], value);
-        flat_combiner->apply_slot();
+        operation->prepare_data(keys[i], value);
+        flat_combiner->apply_slot(Storage::Operation::PUT);
         check_error(operation);
 
-        operation->set(Storage::Operation::GET, keys[i], value);
-        flat_combiner->apply_slot();
+        operation->prepare_data(keys[i], value);
+        flat_combiner->apply_slot(Storage::Operation::GET);
         check_error(operation);
 
-        std::string result = operation->user_slot()->get_data();
+        std::string result = operation->get_data();
         EXPECT_TRUE(result == value);
         if (result != value) {
             abort();
         }
 
-        operation->set(Storage::Operation::DELETE, keys[i], value);
-        flat_combiner->apply_slot();
+        operation->prepare_data(keys[i], value);
+        flat_combiner->apply_slot(Storage::Operation::DELETE);
         check_error(operation);
 
-        operation->set(Storage::Operation::GET, keys[i], value);
-        flat_combiner->apply_slot();
-        bool not_found = operation->error_code() == Storage::ErrorCode::NOT_FOUND;
-        result = operation->user_slot()->get_data();
+        operation->prepare_data(keys[i], value);
+        flat_combiner->apply_slot(Storage::Operation::GET);
+        bool not_found = operation->error_code == Storage::ErrorCode::NOT_FOUND;
+        result = operation->get_data();
         if (!not_found) {
 
             abort();
         }
     }
 
-    auto finish = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = finish - start;
-    std::cout << "Time: " << elapsed.count() << "s" << std::endl;
-
+    {
+        std::lock_guard<std::mutex> lock(mutex_for_timer);
+        auto finish = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = finish - start;
+        std::cout << "Time: " << elapsed.count() << "s" << std::endl;
+    }
 }
 
 TEST(FlatCombineLogicTest, PutGetTest) {
