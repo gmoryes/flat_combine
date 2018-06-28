@@ -148,7 +148,7 @@ private:
 /**
  * Extend user-defined pending operation type with fields required for the
  * flat combine algorithm to work
- * @tparam OpNode - type of user-defined opertation slot
+ * @tparam OpNode - type of user-defined operation slot
  */
 template <typename OpNode>
 class Operation : public OpNode {
