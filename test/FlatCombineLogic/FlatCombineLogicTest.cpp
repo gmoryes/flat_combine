@@ -149,9 +149,11 @@ TEST(FlatCombineLogicTest, PutGetTest) {
     for (auto &thread : workers) {
         thread.join();
     }
+
+    std::cout << "mid tasks: " << shared_flat_combiner->get_stat() << std::endl;
 }
 
-TEST(FlatCombineLogicTest, PutGetDeleteTest) {
+/*TEST(FlatCombineLogicTest, PutGetDeleteTest) {
     std::cout << std::unitbuf;
 
     shared_storage = std::make_shared<Storage>();
@@ -165,4 +167,4 @@ TEST(FlatCombineLogicTest, PutGetDeleteTest) {
     for (auto &thread : workers) {
         thread.join();
     }
-}
+}*/

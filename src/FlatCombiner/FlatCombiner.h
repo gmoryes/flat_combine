@@ -187,6 +187,10 @@ public:
         orphan_slot(slot);
     }
 
+    double get_stat() {
+        return sum / sum_n;
+    }
+
 protected:
 
      /**
@@ -402,6 +406,8 @@ private:
         try {
             // Do combine shot (execute all operations stored by executor)
             FlatCombiner::combine_shot(_combine_shot, n);
+            sum_n++;
+            sum += n;
         } catch (std::exception &exception) {
             std::cerr << "Exception after combine_shot(): " << exception.what() << std::endl;
         }
@@ -435,6 +441,9 @@ private:
     inline Operation<OpNode>* get_queue_head() const {
         return _queue.load(std::memory_order_relaxed);
     }
+
+    double sum;
+    double sum_n;
 };
 
 } // namespace FlatCombiner
