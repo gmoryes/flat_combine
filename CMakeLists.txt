@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.8.2)
+cmake_minimum_required(VERSION 2.8.2)
 project(flat_combine)
 
 set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_FLAGS "-pthread -g")
+set(CMAKE_CXX_FLAGS "-pthread -std=c++0x")
 
 set(CMAKE_CXX_FLAGS_TSAN "-g -fsanitize=thread -fno-sanitize-recover=all"
     CACHE STRING "Compiler flags in tsan build"
